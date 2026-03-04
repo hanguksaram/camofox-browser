@@ -17,7 +17,7 @@
 ### Phase 1: Initialize Session
 ```bash
 # Create a dedicated test session
-camofox create_tab --user dogfood-qa --url "about:blank"
+camofox open "about:blank" --user dogfood-qa
 
 # Start trace recording for evidence capture
 camofox trace start --user dogfood-qa --screenshots --snapshots
@@ -26,13 +26,13 @@ camofox trace start --user dogfood-qa --screenshots --snapshots
 ### Phase 2: Navigate & Orient
 ```bash
 # Navigate to target application
-camofox navigate <tabId> "https://target-app.com"
+camofox navigate "https://target-app.com" --user dogfood-qa
 
 # Take initial snapshot to understand page structure
-camofox snapshot <tabId>
+camofox snapshot --user dogfood-qa
 
 # Capture annotated screenshot for visual baseline
-camofox annotate <tabId>
+camofox annotate --user dogfood-qa
 ```
 
 ### Phase 3: Systematic Exploration
@@ -41,55 +41,55 @@ camofox annotate <tabId>
 Follow the primary user flows:
 ```bash
 # Interact with elements using refs from snapshot
-camofox click <tabId> e5
-camofox type <tabId> e3 "test input"
-camofox press <tabId> Enter
+camofox click e5 --user dogfood-qa
+camofox type e3 "test input" --user dogfood-qa
+camofox press Enter --user dogfood-qa
 
 # Wait for navigation/loading
-camofox wait <tabId> networkidle
+camofox wait networkidle --user dogfood-qa
 
 # Capture state after each action
-camofox snapshot <tabId>
+camofox snapshot --user dogfood-qa
 ```
 
 #### 3.2 Edge Case Testing
 ```bash
 # Test empty inputs
-camofox type <tabId> e3 ""
-camofox press <tabId> Enter
+camofox type e3 "" --user dogfood-qa
+camofox press Enter --user dogfood-qa
 
 # Test long strings
-camofox type <tabId> e3 "aaaa...very long string..."
-camofox press <tabId> Enter
+camofox type e3 "aaaa...very long string..." --user dogfood-qa
+camofox press Enter --user dogfood-qa
 
 # Test special characters
-camofox type <tabId> e3 "<script>alert('xss')</script>"
-camofox press <tabId> Enter
+camofox type e3 "<script>alert('xss')</script>" --user dogfood-qa
+camofox press Enter --user dogfood-qa
 ```
 
 #### 3.3 Error Discovery
 ```bash
 # Check for console errors after interactions
-camofox errors <tabId>
+camofox errors --user dogfood-qa
 
 # Check console output for warnings
-camofox console <tabId> --type warning
+camofox console --user dogfood-qa --type warning
 
 # Monitor all console messages
-camofox console <tabId> --limit 50
+camofox console --user dogfood-qa --limit 50
 ```
 
 #### 3.4 State & Navigation Testing
 ```bash
 # Test back/forward navigation
-camofox go_back <tabId>
-camofox go_forward <tabId>
+camofox go-back --user dogfood-qa
+camofox go-forward --user dogfood-qa
 
 # Save session state for later comparison
-camofox session save --user dogfood-qa
+camofox session save dogfood-qa-state --user dogfood-qa
 
 # Test page reload
-camofox reload <tabId>
+camofox navigate "https://target-app.com" --user dogfood-qa
 ```
 
 ### Phase 4: Document Issues
@@ -97,13 +97,13 @@ camofox reload <tabId>
 When a bug is found:
 ```bash
 # 1. Capture visual evidence
-camofox annotate <tabId>
+camofox annotate --user dogfood-qa
 
 # 2. Capture page errors
-camofox errors <tabId>
+camofox errors --user dogfood-qa
 
 # 3. Capture console logs
-camofox console <tabId>
+camofox console --user dogfood-qa
 
 # 4. Mark trace chunk for this specific issue
 camofox trace chunk-start --user dogfood-qa
@@ -111,7 +111,7 @@ camofox trace chunk-start --user dogfood-qa
 camofox trace chunk-stop --user dogfood-qa
 
 # 5. Take snapshot for element state
-camofox snapshot <tabId>
+camofox snapshot --user dogfood-qa
 ```
 
 ### Phase 5: Wrap Up
@@ -122,11 +122,11 @@ camofox trace stop --user dogfood-qa
 # → View at https://trace.playwright.dev
 
 # Final console/error summary
-camofox errors <tabId>
-camofox console <tabId> --type error
+camofox errors --user dogfood-qa
+camofox console --user dogfood-qa --type error
 
 # Close session
-camofox close_tab <tabId>
+camofox close --user dogfood-qa
 ```
 
 ## Issue Reporting
