@@ -43,7 +43,22 @@ export interface TabState {
   refs: Map<string, RefInfo>;
   visitedUrls: Set<string>;
   toolCalls: number;
+  consoleMessages: ConsoleEntry[];
+  pageErrors: PageErrorEntry[];
   lastSnapshot?: string | null;
+}
+
+export interface ConsoleEntry {
+  timestamp: number;
+  type: 'log' | 'warning' | 'error' | 'info' | 'debug' | 'trace';
+  text: string;
+  location?: { url: string; lineNumber: number; columnNumber: number };
+}
+
+export interface PageErrorEntry {
+  timestamp: number;
+  message: string;
+  stack?: string;
 }
 
 export interface SessionData {

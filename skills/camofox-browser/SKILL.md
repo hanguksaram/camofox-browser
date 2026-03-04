@@ -8,7 +8,7 @@ description: Anti-detection browser automation for AI agents. Use when the user 
 Camofox is an anti-detection browser automation system built on Camoufox + Playwright with:
 - CLI (`camofox`) for operator workflows
 - REST API (port `9377` by default) for programmatic control
-- OpenClaw plugin integration (`plugin.ts`) with 14 plugin tools
+- OpenClaw plugin integration (`plugin.ts`) with 19 plugin tools
 
 This skill is optimized for bot-evasion workflows where default browser automation gets flagged.
 
@@ -133,7 +133,7 @@ Search:
 camofox search "openclaw plugin" --engine github [tabId] [--user <user>]
 ```
 
-Full catalog (all 43): `references/cli-commands.md`.
+Full catalog (all 50): `references/cli-commands.md`.
 
 Global flag reminders:
 ```bash
@@ -184,7 +184,7 @@ GET    /snapshot
 POST   /act
 ```
 
-Full endpoint map (all 41): `references/api-endpoints.md`.
+Full endpoint map (all 48): `references/api-endpoints.md`.
 
 Compatibility warning:
 - `plugin.ts` includes a tool targeting `/youtube/transcript`, but current server route registration does not expose this endpoint.
@@ -429,7 +429,7 @@ screenshot --output login-result.png --user ops1
 
 - Plugin system in this repository is **OpenClaw plugin tools**, not MCP tools.
 - There is **no MCP server implementation** in this codebase.
-- OpenClaw plugin currently defines 14 tools in `plugin.ts`.
+- OpenClaw plugin currently defines 19 tools in `plugin.ts`.
 - A plugin tool references `/youtube/transcript`, but this route is **not registered** in current server routes (`core.ts`, `openclaw.ts`). Treat it as unavailable endpoint.
 - CLI element refs are `eN` (for example `e1`, `e2`), not `@eN`.
 - Source of truth for development decisions: `AGENTS.md`.
@@ -441,7 +441,7 @@ High-confidence troubleshooting checklist:
 4. Re-run failing action with same `--user`
 5. If display mode changed, create new tab (old tab ids invalid)
 
-### Appendix A — 43-command quick index
+### Appendix A — 50-command quick index
 
 Core (5):
 - `open`
@@ -472,6 +472,17 @@ Interaction (6):
 - `hover`
 - `press`
 - `drag`
+
+Console/error capture (2):
+- `console`
+- `errors`
+
+Tracing (5):
+- `trace start`
+- `trace stop`
+- `trace chunk-start`
+- `trace chunk-stop`
+- `trace status`
 
 Session (4):
 - `session save`

@@ -1,4 +1,4 @@
-# OpenClaw Plugin Tools (14)
+# OpenClaw Plugin Tools (19)
 
 This document describes the **OpenClaw Plugin Tools** registered in `plugin.ts`.
 
@@ -16,7 +16,7 @@ Source of truth for development: `AGENTS.md`
 ## Table of Contents
 
 1. Tool Architecture
-2. Tool Catalog (14)
+2. Tool Catalog (19)
 3. Tool-to-Endpoint Mapping
 4. Operational Notes
 5. Example Tool Calls
@@ -41,7 +41,7 @@ Transport:
 
 ---
 
-## 2) Tool Catalog (14)
+## 2) Tool Catalog (19)
 
 ## 1. `camofox_create_tab`
 Description: create new browser tab.
@@ -207,6 +207,21 @@ Execute behavior:
 - Calls `POST /sessions/:userId/cookies` with bearer auth
 - Requires `CAMOFOX_API_KEY` present in plugin/server environment
 
+## Console & Error Capture
+
+| Tool | Description |
+|---|---|
+| `camofox_console` | Get console messages from a tab |
+| `camofox_errors` | Get page errors from a tab |
+| `camofox_console_clear` | Clear console and error buffers for a tab |
+
+## Tracing
+
+| Tool | Description |
+|---|---|
+| `camofox_trace_start` | Start Playwright trace recording |
+| `camofox_trace_stop` | Stop tracing and save trace ZIP file |
+
 ---
 
 ## 3) Tool-to-Endpoint Mapping
@@ -227,6 +242,11 @@ Execute behavior:
 | `camofox_list_tabs` | `GET /tabs` |
 | `camofox_youtube_transcript` | `POST /youtube/transcript` (route not registered) |
 | `camofox_import_cookies` | `POST /sessions/:userId/cookies` |
+| `camofox_console` | `GET /tabs/:tabId/console` |
+| `camofox_errors` | `GET /tabs/:tabId/errors` |
+| `camofox_console_clear` | `POST /tabs/:tabId/console/clear` |
+| `camofox_trace_start` | `POST /tabs/:tabId/trace/start` |
+| `camofox_trace_stop` | `POST /tabs/:tabId/trace/stop` |
 
 ---
 
@@ -236,6 +256,9 @@ Execute behavior:
 - Fallback `userId` is generated (`camofox-<uuid>`) when agent context has no id.
 - Health check and RPC methods are also registered (`camofox.health`, `camofox.status`), but these are plugin-level integrations, separate from tool catalog.
 - If you need strict production reliability, verify route availability against `src/routes/*.ts` before using optional plugin tools.
+
+Catalog size note:
+- OpenClaw plugin currently defines 19 tools.
 
 Compatibility boundaries:
 - Tool names are fixed with `camofox_` prefix and are intended for OpenClaw-compatible agent runtimes.

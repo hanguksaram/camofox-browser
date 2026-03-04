@@ -11,6 +11,8 @@ import { registerSessionCommands } from './commands/session';
 import { registerServerCommands } from './commands/server';
 import { registerAdvancedCommands } from './commands/advanced';
 import { registerPipeCommands } from './commands/pipe';
+import { registerConsoleCommands } from './commands/console';
+import { registerTraceCommands } from './commands/trace';
 import { parsePort } from './utils/command-helpers';
 import { handleError } from './utils/error-handler';
 import { HttpTransport } from './transport/http';
@@ -173,6 +175,26 @@ export async function run(argv = process.argv): Promise<void> {
 	});
 
 	registerPipeCommands(program, {
+		getTransport: () => {
+			const command = program;
+			return getTransport(command);
+		},
+		getFormat,
+		print,
+		handleError: (error: unknown): never => handleError(error as Error),
+	});
+
+	registerConsoleCommands(program, {
+		getTransport: () => {
+			const command = program;
+			return getTransport(command);
+		},
+		getFormat,
+		print,
+		handleError: (error: unknown): never => handleError(error as Error),
+	});
+
+	registerTraceCommands(program, {
 		getTransport: () => {
 			const command = program;
 			return getTransport(command);

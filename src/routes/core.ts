@@ -58,12 +58,33 @@ import {
 } from '../services/download';
 import { extractResources, resolveBlob } from '../services/resource-extractor';
 import { batchDownload } from '../services/batch-downloader';
+import {
+	startTracing,
+	stopTracing,
+	startTracingChunk,
+	stopTracingChunk,
+	getTracingState,
+} from '../services/tracing';
 
-import type { CookieInput, ContextOverrides } from '../types';
+import type { CookieInput, ContextOverrides, TabState } from '../types';
 
 const CONFIG = loadConfig();
 
 const router = Router();
+
+function getTab(tabId: string, userId: unknown): TabState | undefined {
+	return findTabById(tabId, userId)?.tabState;
+}
+
+function getTracingErrorStatus(err: unknown): number {
+	const message = err instanceof Error ? err.message : String(err);
+	if (message.includes('already active')) return 409;
+	if (message.includes('No active tracing')) return 400;
+	if (message.includes('Tracing not started')) return 400;
+	if (message.includes('Chunk already active')) return 409;
+	if (message.includes('No active chunk')) return 400;
+	return 500;
+}
 
 // Import cookies into a user's browser context (Playwright cookies format)
 // POST /sessions/:userId/cookies { cookies: Cookie[] }
@@ -1126,6 +1147,219 @@ router.post('/tabs/:tabId/resolve-blobs', async (req, res) => {
 		const message = err instanceof Error ? err.message : String(err);
 		log('error', 'resolve blobs failed', { error: message });
 		res.status(500).json({ ok: false, error: safeError(err) });
+	}
+});
+
+router.post('/tabs/:tabId/trace/start', async (req, res) => {
+	try {
+		if (CONFIG.apiKey && !isAuthorizedWithApiKey(req as unknown as Request, CONFIG.apiKey)) {
+			return res.status(403).json({ error: 'Forbidden' });
+		}
+
+		const { tabId } = req.params as { tabId: string };
+		const { userId, screenshots, snapshots } = req.body as {
+			userId?: unknown;
+			screenshots?: unknown;
+			snapshots?: unknown;
+		};
+
+		if (typeof userId !== 'string' || userId.trim().length === 0) {
+			return res.status(400).json({ ok: false, error: 'userId required' });
+		}
+
+		const tab = getTab(tabId, userId);
+		if (!tab) return res.status(404).json({ ok: false, error: 'Tab not found' });
+
+		await startTracing(userId, tab.page.context(), {
+			screenshots: typeof screenshots === 'boolean' ? screenshots : undefined,
+			snapshots: typeof snapshots === 'boolean' ? snapshots : undefined,
+		});
+
+		return res.json({ ok: true, tracing: true });
+	} catch (err) {
+		const status = getTracingErrorStatus(err);
+		return res.status(status).json({ ok: false, error: safeError(err) });
+	}
+});
+
+router.post('/tabs/:tabId/trace/stop', async (req, res) => {
+	try {
+		if (CONFIG.apiKey && !isAuthorizedWithApiKey(req as unknown as Request, CONFIG.apiKey)) {
+			return res.status(403).json({ error: 'Forbidden' });
+		}
+
+		const { tabId } = req.params as { tabId: string };
+		const { userId, path } = req.body as {
+			userId?: unknown;
+			path?: unknown;
+		};
+
+		if (typeof userId !== 'string' || userId.trim().length === 0) {
+			return res.status(400).json({ ok: false, error: 'userId required' });
+		}
+		if (path !== undefined && typeof path !== 'string') {
+			return res.status(400).json({ ok: false, error: 'path must be a string' });
+		}
+
+		const tab = getTab(tabId, userId);
+		if (!tab) return res.status(404).json({ ok: false, error: 'Tab not found' });
+
+		const result = await stopTracing(userId, tab.page.context(), path);
+		return res.json({ ok: true, ...result });
+	} catch (err) {
+		const status = getTracingErrorStatus(err);
+		return res.status(status).json({ ok: false, error: safeError(err) });
+	}
+});
+
+router.post('/tabs/:tabId/trace/chunk/start', async (req, res) => {
+	try {
+		if (CONFIG.apiKey && !isAuthorizedWithApiKey(req as unknown as Request, CONFIG.apiKey)) {
+			return res.status(403).json({ error: 'Forbidden' });
+		}
+
+		const { tabId } = req.params as { tabId: string };
+		const { userId } = req.body as { userId?: unknown };
+
+		if (typeof userId !== 'string' || userId.trim().length === 0) {
+			return res.status(400).json({ ok: false, error: 'userId required' });
+		}
+
+		const tab = getTab(tabId, userId);
+		if (!tab) return res.status(404).json({ ok: false, error: 'Tab not found' });
+
+		await startTracingChunk(userId, tab.page.context());
+		return res.json({ ok: true, chunkActive: true });
+	} catch (err) {
+		const status = getTracingErrorStatus(err);
+		return res.status(status).json({ ok: false, error: safeError(err) });
+	}
+});
+
+router.post('/tabs/:tabId/trace/chunk/stop', async (req, res) => {
+	try {
+		if (CONFIG.apiKey && !isAuthorizedWithApiKey(req as unknown as Request, CONFIG.apiKey)) {
+			return res.status(403).json({ error: 'Forbidden' });
+		}
+
+		const { tabId } = req.params as { tabId: string };
+		const { userId, path } = req.body as {
+			userId?: unknown;
+			path?: unknown;
+		};
+
+		if (typeof userId !== 'string' || userId.trim().length === 0) {
+			return res.status(400).json({ ok: false, error: 'userId required' });
+		}
+		if (path !== undefined && typeof path !== 'string') {
+			return res.status(400).json({ ok: false, error: 'path must be a string' });
+		}
+
+		const tab = getTab(tabId, userId);
+		if (!tab) return res.status(404).json({ ok: false, error: 'Tab not found' });
+
+		const result = await stopTracingChunk(userId, tab.page.context(), path);
+		return res.json({ ok: true, ...result });
+	} catch (err) {
+		const status = getTracingErrorStatus(err);
+		return res.status(status).json({ ok: false, error: safeError(err) });
+	}
+});
+
+router.get('/tabs/:tabId/trace/status', async (req, res) => {
+	try {
+		if (CONFIG.apiKey && !isAuthorizedWithApiKey(req as unknown as Request, CONFIG.apiKey)) {
+			return res.status(403).json({ error: 'Forbidden' });
+		}
+
+		const { tabId } = req.params;
+		const userId = req.query.userId;
+
+		if (typeof userId !== 'string' || userId.trim().length === 0) {
+			return res.status(400).json({ ok: false, error: 'userId required' });
+		}
+
+		const tab = getTab(tabId, userId);
+		if (!tab) return res.status(404).json({ ok: false, error: 'Tab not found' });
+
+		const state = getTracingState(userId);
+		return res.json({ ok: true, ...state });
+	} catch (err) {
+		return res.status(500).json({ ok: false, error: safeError(err) });
+	}
+});
+
+router.get('/tabs/:tabId/console', async (req, res) => {
+	try {
+		if (CONFIG.apiKey && !isAuthorizedWithApiKey(req as unknown as Request, CONFIG.apiKey)) {
+			return res.status(403).json({ error: 'Forbidden' });
+		}
+
+		const { tabId } = req.params;
+		const userId = (req.query.userId as string) || 'default';
+		const type = req.query.type as string | undefined;
+		const limit = parseInt(req.query.limit as string, 10) || 100;
+
+		const tab = getTab(tabId, userId);
+		if (!tab) return res.status(404).json({ ok: false, error: 'Tab not found' });
+
+		let messages = [...tab.consoleMessages];
+		if (type) {
+			messages = messages.filter((m) => m.type === type);
+		}
+		if (limit > 0) {
+			messages = messages.slice(-limit);
+		}
+
+		return res.json({ ok: true, messages, count: messages.length });
+	} catch (err) {
+		return res.status(500).json({ ok: false, error: safeError(err) });
+	}
+});
+
+router.get('/tabs/:tabId/errors', async (req, res) => {
+	try {
+		if (CONFIG.apiKey && !isAuthorizedWithApiKey(req as unknown as Request, CONFIG.apiKey)) {
+			return res.status(403).json({ error: 'Forbidden' });
+		}
+
+		const { tabId } = req.params;
+		const userId = (req.query.userId as string) || 'default';
+		const limit = parseInt(req.query.limit as string, 10) || 100;
+
+		const tab = getTab(tabId, userId);
+		if (!tab) return res.status(404).json({ ok: false, error: 'Tab not found' });
+
+		let errors = [...tab.pageErrors];
+		if (limit > 0) {
+			errors = errors.slice(-limit);
+		}
+
+		return res.json({ ok: true, errors, count: errors.length });
+	} catch (err) {
+		return res.status(500).json({ ok: false, error: safeError(err) });
+	}
+});
+
+router.post('/tabs/:tabId/console/clear', async (req, res) => {
+	try {
+		if (CONFIG.apiKey && !isAuthorizedWithApiKey(req as unknown as Request, CONFIG.apiKey)) {
+			return res.status(403).json({ error: 'Forbidden' });
+		}
+
+		const { tabId } = req.params;
+		const userId = ((req.body as { userId?: string } | undefined)?.userId || (req.query.userId as string)) || 'default';
+
+		const tab = getTab(tabId, userId);
+		if (!tab) return res.status(404).json({ ok: false, error: 'Tab not found' });
+
+		const cleared = tab.consoleMessages.length + tab.pageErrors.length;
+		tab.consoleMessages.length = 0;
+		tab.pageErrors.length = 0;
+
+		return res.json({ ok: true, cleared });
+	} catch (err) {
+		return res.status(500).json({ ok: false, error: safeError(err) });
 	}
 });
 

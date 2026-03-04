@@ -1,4 +1,4 @@
-# Camofox CLI Commands (43 Total)
+# Camofox CLI Commands (50 Total)
 
 Complete, source-verified CLI command reference for `camofox` v2.0.0.
 
@@ -15,15 +15,17 @@ Source of truth for development: `AGENTS.md`
 2. Navigation Commands (4)
 3. Content Commands (7)
 4. Interaction Commands (6)
-5. Session Commands (4)
-6. Download/Cookie Commands (4)
-7. Auth Commands (5)
-8. Server Commands (3)
-9. Advanced Commands (4)
-10. Pipeline Command (1)
-11. Global Options
-12. Full Command Index Table
-13. Fallback/Compatibility Notes
+5. Console & Error Capture (2)
+6. Tracing (5)
+7. Session Commands (4)
+8. Download/Cookie Commands (4)
+9. Auth Commands (5)
+10. Server Commands (3)
+11. Advanced Commands (4)
+12. Pipeline Command (1)
+13. Global Options
+14. Full Command Index Table
+15. Fallback/Compatibility Notes
 
 ---
 
@@ -264,7 +266,28 @@ camofox drag <fromRef> <toRef> [tabId] [--user <user>]
 
 ---
 
-## 5) Session Commands (4)
+## 5) Console & Error Capture
+
+| Command | Description |
+|---|---|
+| `camofox console [tabId]` | Get console messages. Options: `--user`, `--type`, `--limit`, `--clear` |
+| `camofox errors [tabId]` | Get page errors. Options: `--user`, `--limit`, `--clear` |
+
+---
+
+## 6) Tracing
+
+| Command | Description |
+|---|---|
+| `camofox trace start` | Start Playwright trace recording. Options: `--user`, `--screenshots`, `--snapshots` |
+| `camofox trace stop` | Stop tracing and save ZIP. Options: `--user`, `--output` |
+| `camofox trace chunk-start` | Start a new trace chunk. Options: `--user` |
+| `camofox trace chunk-stop` | Stop current chunk and save ZIP. Options: `--user`, `--output` |
+| `camofox trace status` | Get tracing status. Options: `--user` |
+
+---
+
+## 7) Session Commands (4)
 
 ### `camofox session save <name> [tabId]`
 Save session cookies to local file.
@@ -296,7 +319,7 @@ camofox session delete <name> [--force]
 
 ---
 
-## 6) Download/Cookie Commands (4)
+## 8) Download/Cookie Commands (4)
 
 ### `camofox cookie export [tabId]`
 Export cookies as JSON.
@@ -332,7 +355,7 @@ camofox downloads [--user <user>] [--format <format>]
 
 ---
 
-## 7) Auth Commands (5)
+## 9) Auth Commands (5)
 
 ### `camofox auth save <profile-name>`
 Save encrypted credentials.
@@ -375,7 +398,7 @@ camofox auth change-password <profile-name>
 
 ---
 
-## 8) Server Commands (3)
+## 10) Server Commands (3)
 
 ### `camofox server start`
 ```bash
@@ -394,7 +417,7 @@ camofox server status [--format <format>]
 
 ---
 
-## 9) Advanced Commands (4)
+## 11) Advanced Commands (4)
 
 ### `camofox annotate [tabId]`
 Capture screenshot and ref map.
@@ -426,7 +449,7 @@ camofox info [--format <format>]
 
 ---
 
-## 10) Pipeline Command (1)
+## 12) Pipeline Command (1)
 
 ### `camofox run <script-file>`
 Sequential script runner.
@@ -454,7 +477,7 @@ camofox run demo.cf
 
 ---
 
-## 11) Global Options
+## 13) Global Options
 
 Global options from `src/cli/index.ts`:
 
@@ -474,9 +497,9 @@ Practical tips:
 
 ---
 
-## 12) Full Command Index Table
+## 14) Full Command Index Table
 
-This table lists all 43 commands in one place.
+This table lists all 50 commands in one place.
 
 | # | Category | Command |
 |---|---|---|
@@ -502,31 +525,38 @@ This table lists all 43 commands in one place.
 | 20 | interaction | `hover` |
 | 21 | interaction | `press` |
 | 22 | interaction | `drag` |
-| 23 | session | `session save` |
-| 24 | session | `session load` |
-| 25 | session | `session list` |
-| 26 | session | `session delete` |
-| 27 | download | `cookie export` |
-| 28 | download | `cookie import` |
-| 29 | download | `download` |
-| 30 | download | `downloads` |
-| 31 | auth | `auth save` |
-| 32 | auth | `auth load` |
-| 33 | auth | `auth list` |
-| 34 | auth | `auth delete` |
-| 35 | auth | `auth change-password` |
-| 36 | server | `server start` |
-| 37 | server | `server stop` |
-| 38 | server | `server status` |
-| 39 | advanced | `annotate` |
-| 40 | advanced | `health` |
-| 41 | advanced | `version` |
-| 42 | advanced | `info` |
-| 43 | pipeline | `run` |
+| 23 | console/error | `console` |
+| 24 | console/error | `errors` |
+| 25 | tracing | `trace start` |
+| 26 | tracing | `trace stop` |
+| 27 | tracing | `trace chunk-start` |
+| 28 | tracing | `trace chunk-stop` |
+| 29 | tracing | `trace status` |
+| 30 | session | `session save` |
+| 31 | session | `session load` |
+| 32 | session | `session list` |
+| 33 | session | `session delete` |
+| 34 | download | `cookie export` |
+| 35 | download | `cookie import` |
+| 36 | download | `download` |
+| 37 | download | `downloads` |
+| 38 | auth | `auth save` |
+| 39 | auth | `auth load` |
+| 40 | auth | `auth list` |
+| 41 | auth | `auth delete` |
+| 42 | auth | `auth change-password` |
+| 43 | server | `server start` |
+| 44 | server | `server stop` |
+| 45 | server | `server status` |
+| 46 | advanced | `annotate` |
+| 47 | advanced | `health` |
+| 48 | advanced | `version` |
+| 49 | advanced | `info` |
+| 50 | pipeline | `run` |
 
 ---
 
-## 13) Fallback/Compatibility Notes
+## 15) Fallback/Compatibility Notes
 
 Several commands attempt API v2-style paths first and fall back to legacy/OpenClaw-compatible paths if needed.
 

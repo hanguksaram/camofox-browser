@@ -1,7 +1,7 @@
-# Camofox API Endpoints (41 Total)
+# Camofox API Endpoints (48 Total)
 
 Complete route reference from:
-- `src/routes/core.ts` (34 endpoints)
+- `src/routes/core.ts` (41 endpoints)
 - `src/routes/openclaw.ts` (7 endpoints)
 
 Related:
@@ -13,7 +13,7 @@ Source of truth for development: `AGENTS.md`
 
 ## Table of Contents
 
-1. Core Routes (`core.ts`) — 34
+1. Core Routes (`core.ts`) — 41
 2. OpenClaw Routes (`openclaw.ts`) — 7
 3. Endpoint Notes
 4. Auth & Security Notes
@@ -22,7 +22,7 @@ Source of truth for development: `AGENTS.md`
 
 ---
 
-## 1) Core Routes (`core.ts`) — 34
+## 1) Core Routes (`core.ts`) — 41
 
 Base URL: `http://localhost:9377`
 
@@ -138,6 +138,24 @@ Body: `{ userId }`
 
 ### 19. `POST /tabs/:tabId/refresh`
 Body: `{ userId }`
+
+## Console & Error Capture
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/tabs/:tabId/console` | Get console messages. Query: `?userId=`, `?type=`, `?limit=` |
+| GET | `/tabs/:tabId/errors` | Get page errors. Query: `?userId=`, `?limit=` |
+| POST | `/tabs/:tabId/console/clear` | Clear console and error buffers. Body: `{ userId }` |
+
+## Tracing
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/tabs/:tabId/trace/start` | Start Playwright tracing. Body: `{ userId, screenshots?, snapshots? }` |
+| POST | `/tabs/:tabId/trace/stop` | Stop tracing and save ZIP. Body: `{ userId, path? }` |
+| POST | `/tabs/:tabId/trace/chunk/start` | Start trace chunk. Body: `{ userId }` |
+| POST | `/tabs/:tabId/trace/chunk/stop` | Stop trace chunk and save ZIP. Body: `{ userId, path? }` |
+| GET | `/tabs/:tabId/trace/status` | Get tracing status. Query: `?userId=` |
 
 ## Extraction and stats
 

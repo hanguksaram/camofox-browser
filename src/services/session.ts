@@ -8,6 +8,7 @@ import { contextPool } from './context-pool';
 import { cleanupUserDownloads } from './download';
 import { decrementActiveOps, incrementActiveOps } from './health';
 import { stopVnc } from './vnc';
+import { cleanupTracing } from './tracing';
 
 const CONFIG = loadConfig();
 
@@ -100,6 +101,8 @@ function cleanupSessionsForUserId(userId: string, reason: string): void {
 	} catch {
 		// ignore cleanup errors
 	}
+
+	cleanupTracing(prefix);
 
 	for (const [key, session] of sessions) {
 		if (key === prefix || key.startsWith(prefix + ':')) {
@@ -313,6 +316,7 @@ export async function closeAllSessions(): Promise<void> {
 		void stopVnc(userId).catch(() => {});
 		unindexSessionTabs(session);
 		sessions.delete(userId);
+		cleanupTracing(userId);
 		try {
 			cleanupUserDownloads(userId);
 		} catch {
@@ -334,6 +338,7 @@ export function startCleanupInterval(): NodeJS.Timeout {
 				contextPool.closeContext(sessionKey).catch(() => {});
 				unindexSessionTabs(session);
 				sessions.delete(sessionKey);
+				cleanupTracing(sessionKey);
 				log('info', 'session expired', { userId: sessionKey });
 			}
 		}

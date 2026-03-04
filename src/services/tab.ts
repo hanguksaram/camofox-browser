@@ -1,7 +1,15 @@
 import type { Locator, Page } from 'playwright-core';
 
 import { expandMacro } from '../utils/macros';
-import type { EvaluateResult, RefInfo, ScrollPosition, TabState, WaitForPageReadyOptions } from '../types';
+import type {
+	ConsoleEntry,
+	EvaluateResult,
+	PageErrorEntry,
+	RefInfo,
+	ScrollPosition,
+	TabState,
+	WaitForPageReadyOptions,
+} from '../types';
 import { log } from '../middleware/logging';
 
 const ALLOWED_URL_SCHEMES: ReadonlyArray<'http:' | 'https:'> = ['http:', 'https:'];
@@ -33,6 +41,7 @@ const DEFAULT_EVAL_TIMEOUT = 5000;
 const MAX_EVAL_EXTENDED_TIMEOUT = 300000;
 const DEFAULT_EVAL_EXTENDED_TIMEOUT = 30000;
 const MAX_RESULT_SIZE = 1048576; // 1MB
+const CONSOLE_BUFFER_SIZE = Math.max(100, parseInt(process.env.CAMOFOX_CONSOLE_BUFFER_SIZE || '1000', 10));
 
 interface EvaluateConfig {
 	maxTimeout: number;
@@ -340,13 +349,61 @@ export function refToLocator(page: Page, ref: string, refs: Map<string, RefInfo>
 	return locator;
 }
 
+function attachConsoleListeners(state: TabState): void {
+	const { page } = state;
+
+	page.on('console', (msg) => {
+		const location = msg.location();
+		const entry: ConsoleEntry = {
+			timestamp: Date.now(),
+			type: msg.type() as ConsoleEntry['type'],
+			text: msg.text(),
+			location: location
+				? {
+					url: location.url,
+					lineNumber: location.lineNumber,
+					columnNumber: location.columnNumber,
+				}
+				: undefined,
+		};
+		state.consoleMessages.push(entry);
+		if (state.consoleMessages.length > CONSOLE_BUFFER_SIZE) {
+			state.consoleMessages.shift();
+		}
+	});
+
+	page.on('pageerror', (error) => {
+		const now = Date.now();
+		const last = state.consoleMessages[state.consoleMessages.length - 1];
+		const errorMsg = error?.message || String(error);
+		if (last?.type === 'error' && now - last.timestamp < 100 && last.text.includes(errorMsg)) {
+			return;
+		}
+
+		const entry: PageErrorEntry = {
+			timestamp: now,
+			message: errorMsg,
+			stack: error?.stack,
+		};
+		state.pageErrors.push(entry);
+		if (state.pageErrors.length > CONSOLE_BUFFER_SIZE) {
+			state.pageErrors.shift();
+		}
+	});
+}
+
 export function createTabState(page: Page): TabState {
-	return {
+	const state: TabState = {
 		page,
 		refs: new Map(),
 		visitedUrls: new Set(),
 		toolCalls: 0,
+		consoleMessages: [],
+		pageErrors: [],
 	};
+
+	attachConsoleListeners(state);
+	return state;
 }
 
 export async function navigateTab(tabId: string, tabState: TabState, params: { url?: string; macro?: string; query?: string }): Promise<{ ok: true; url: string }>{

@@ -286,6 +286,134 @@ export default function register(api: PluginApi) {
   }));
 
   api.registerTool((ctx: ToolContext) => ({
+    name: "camofox_console",
+    description:
+      "View browser console messages from a Camoufox tab. Returns console.log, console.warn, console.error, etc. messages captured since tab creation.",
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string", description: "Tab ID to get console messages from" },
+        type: {
+          type: "string",
+          description: "Filter by type: log, warning, error, info, debug",
+          enum: ["log", "warning", "error", "info", "debug"],
+        },
+        limit: { type: "number", description: "Maximum number of messages to return (default 100)" },
+        userId: { type: "string", description: "User/session ID (optional, defaults to current agent)" },
+      },
+      required: ["tabId"],
+    },
+    async execute(_id, params) {
+      const args = params as { tabId: string; type?: string; limit?: number; userId?: string };
+      const userId = args.userId || ctx.agentId || fallbackUserId;
+      const query = new URLSearchParams({ userId });
+      if (args.type) query.set("type", args.type);
+      if (typeof args.limit === "number") query.set("limit", String(args.limit));
+      const result = await fetchApi(baseUrl, `/tabs/${args.tabId}/console?${query.toString()}`);
+      return toToolResult(result);
+    },
+  }));
+
+  api.registerTool((ctx: ToolContext) => ({
+    name: "camofox_errors",
+    description:
+      "View uncaught JavaScript errors from a Camoufox tab. Returns pageerror events (unhandled exceptions, failed promises) captured since tab creation.",
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string", description: "Tab ID to get errors from" },
+        limit: { type: "number", description: "Maximum number of errors to return (default 100)" },
+        userId: { type: "string", description: "User/session ID (optional, defaults to current agent)" },
+      },
+      required: ["tabId"],
+    },
+    async execute(_id, params) {
+      const args = params as { tabId: string; limit?: number; userId?: string };
+      const userId = args.userId || ctx.agentId || fallbackUserId;
+      const query = new URLSearchParams({ userId });
+      if (typeof args.limit === "number") query.set("limit", String(args.limit));
+      const result = await fetchApi(baseUrl, `/tabs/${args.tabId}/errors?${query.toString()}`);
+      return toToolResult(result);
+    },
+  }));
+
+  api.registerTool((ctx: ToolContext) => ({
+    name: "camofox_console_clear",
+    description:
+      "Clear captured console messages and page errors for a Camoufox tab.",
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string", description: "Tab ID to clear console and errors for" },
+        userId: { type: "string", description: "User/session ID (optional, defaults to current agent)" },
+      },
+      required: ["tabId"],
+    },
+    async execute(_id, params) {
+      const args = params as { tabId: string; userId?: string };
+      const result = await fetchApi(baseUrl, `/tabs/${args.tabId}/console/clear`, {
+        method: "POST",
+        body: JSON.stringify({
+          userId: args.userId || ctx.agentId || fallbackUserId,
+        }),
+      });
+      return toToolResult(result);
+    },
+  }));
+
+  api.registerTool((ctx: ToolContext) => ({
+    name: "camofox_trace_start",
+    description:
+      "Start Playwright trace recording on a Camoufox session. Captures screenshots, DOM snapshots, and network activity. Output is a ZIP file viewable at trace.playwright.dev",
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string", description: "Tab ID to trace" },
+        screenshots: { type: "boolean", description: "Include screenshots (default true)" },
+        snapshots: { type: "boolean", description: "Include DOM snapshots (default true)" },
+      },
+      required: ["tabId"],
+    },
+    async execute(_id, params) {
+      const args = params as { tabId: string; userId?: string; screenshots?: boolean; snapshots?: boolean };
+      const result = await fetchApi(baseUrl, `/tabs/${args.tabId}/trace/start`, {
+        method: "POST",
+        body: JSON.stringify({
+          userId: args.userId || ctx.agentId || fallbackUserId,
+          screenshots: args.screenshots ?? true,
+          snapshots: args.snapshots ?? true,
+        }),
+      });
+      return toToolResult(result);
+    },
+  }));
+
+  api.registerTool((ctx: ToolContext) => ({
+    name: "camofox_trace_stop",
+    description:
+      "Stop Playwright trace recording and save the trace ZIP file. Opens at trace.playwright.dev for visual debugging.",
+    parameters: {
+      type: "object",
+      properties: {
+        tabId: { type: "string", description: "Tab ID" },
+        outputPath: { type: "string", description: "Output path for trace ZIP file" },
+      },
+      required: ["tabId"],
+    },
+    async execute(_id, params) {
+      const args = params as { tabId: string; userId?: string; outputPath?: string };
+      const result = await fetchApi(baseUrl, `/tabs/${args.tabId}/trace/stop`, {
+        method: "POST",
+        body: JSON.stringify({
+          userId: args.userId || ctx.agentId || fallbackUserId,
+          path: args.outputPath,
+        }),
+      });
+      return toToolResult(result);
+    },
+  }));
+
+  api.registerTool((ctx: ToolContext) => ({
     name: "camofox_click",
     description: "Click an element in a Camoufox tab by ref (e.g., e1) or CSS selector.",
     parameters: {
