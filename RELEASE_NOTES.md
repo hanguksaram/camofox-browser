@@ -1,3 +1,13 @@
+## v2.0.1 (2026-03-05)
+
+### Bug Fixes
+- **CLI:** Fixed fresh-install crash caused by `process.cwd()` failing when CWD lacks `package.json` (global installs). Now uses `__dirname`-relative path. (#10)
+- **CLI:** Fixed stale-daemon reuse — `isRunning()` now validates server identity (`engine === 'camoufox'`), preventing connection to wrong services on port 9377.
+- **Health:** Added `version` field to `/health` and OpenClaw `/` endpoints for runtime version verification.
+
+### Documentation
+- Comprehensive v2.0.0 documentation update: 17 new API routes, 3 CLI command groups, 12 environment variables documented.
+
 ## 🦊 CamoFox Browser Server v2.0.0
 
 **Release Date:** 2026-03-03
