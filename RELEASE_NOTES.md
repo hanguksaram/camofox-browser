@@ -1,4 +1,6 @@
 ### v2.0.3 — CLI Bug Fixes & Cleanup (2026-03-05)
+**npm:** Published as v2.0.4 (v2.0.3 reserved on npm registry)
+
 **Bug Fixes:**
 - **fill command**: Fixed ref format mismatch - now sends bare refs (`e1`) instead of bracketed (`[e1]`)
 - **select command**: Fixed to use Playwright's `selectOption()` instead of `fill()`, supports both value and label matching
