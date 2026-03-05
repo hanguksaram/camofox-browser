@@ -118,6 +118,21 @@ camofox download [url] [--path <dir>] [--user <user>]                     # plac
 camofox downloads [--user <user>] [--format <format>]                     # list tracked downloads
 ```
 
+### Console Commands
+| Command | Description |
+|---------|-------------|
+| `camofox console [tabId]` | View console messages (filtered by --type, clearable with --clear) |
+| `camofox errors [tabId]` | View uncaught JavaScript errors (clearable with --clear) |
+
+### Trace Commands
+| Command | Description |
+|---------|-------------|
+| `camofox trace start [tabId]` | Start recording Playwright trace |
+| `camofox trace stop [tabId]` | Stop and save trace ZIP (-o for output path) |
+| `camofox trace chunk-start [tabId]` | Start new trace chunk within active trace |
+| `camofox trace chunk-stop [tabId]` | Stop chunk and save ZIP |
+| `camofox trace status [tabId]` | Check trace recording status |
+
 ### Server Management
 
 ```bash
@@ -206,6 +221,14 @@ Base URL: `http://localhost:9377`
 | POST | `/tabs/:tabId/extract-resources` | Extract downloadable resources | Path: `tabId`; Body: `userId` + extractor options | none |
 | POST | `/tabs/:tabId/batch-download` | Batch download resources | Path: `tabId`; Body: `userId` + batch options | none |
 | POST | `/tabs/:tabId/resolve-blobs` | Resolve `blob:` URLs to base64 | Path: `tabId`; Body: `userId`, `urls[]` | none |
+| POST | `/tabs/:tabId/trace/start` | Start trace recording | Path: `tabId`; Body: `userId`; optional `screenshots`, `snapshots` | Bearer API key only when `CAMOFOX_API_KEY` is set |
+| POST | `/tabs/:tabId/trace/stop` | Stop and save trace ZIP | Path: `tabId`; Body: `userId`; optional `path` | Bearer API key only when `CAMOFOX_API_KEY` is set |
+| POST | `/tabs/:tabId/trace/chunk/start` | Start trace chunk | Path: `tabId`; Body: `userId` | Bearer API key only when `CAMOFOX_API_KEY` is set |
+| POST | `/tabs/:tabId/trace/chunk/stop` | Stop chunk and save ZIP | Path: `tabId`; Body: `userId`; optional `path` | Bearer API key only when `CAMOFOX_API_KEY` is set |
+| GET | `/tabs/:tabId/trace/status` | Check trace status | Path: `tabId`; Query: `userId` | Bearer API key only when `CAMOFOX_API_KEY` is set |
+| GET | `/tabs/:tabId/console` | Get console messages | Path: `tabId`; Query: `userId`; optional `type`, `limit` | Bearer API key only when `CAMOFOX_API_KEY` is set |
+| GET | `/tabs/:tabId/errors` | Get uncaught JS errors | Path: `tabId`; Query: `userId`; optional `limit` | Bearer API key only when `CAMOFOX_API_KEY` is set |
+| POST | `/tabs/:tabId/console/clear` | Clear console and errors | Path: `tabId`; Body/Query: `userId` | Bearer API key only when `CAMOFOX_API_KEY` is set |
 
 ### OpenClaw Endpoints
 
@@ -452,7 +475,9 @@ Source of truth: `src/utils/config.ts`, `src/services/session.ts`, `src/services
 │   │   │   ├── download.ts
 │   │   │   ├── server.ts
 │   │   │   ├── advanced.ts
-│   │   │   └── pipe.ts
+│   │   │   ├── pipe.ts
+│   │   │   ├── console.ts
+│   │   │   └── trace.ts
 │   │   ├── server/manager.ts
 │   │   ├── vault/
 │   │   └── transport/
@@ -461,6 +486,7 @@ Source of truth: `src/utils/config.ts`, `src/services/session.ts`, `src/services
 │   │   ├── tab.ts
 │   │   ├── context-pool.ts
 │   │   ├── download.ts
+│   │   ├── tracing.ts
 │   │   └── vnc.ts
 │   └── utils/
 │       ├── config.ts
@@ -480,6 +506,7 @@ Source of truth: `src/utils/config.ts`, `src/services/session.ts`, `src/services
 - `src/utils/presets.ts` — built-in geo presets + custom preset loader.
 - `src/utils/config.ts` — centralized environment parsing/defaults.
 - `src/services/session.ts` — session limits/timeouts and tab indexing.
+- `src/services/tracing.ts` — Playwright trace lifecycle and chunk management.
 - `src/services/vnc.ts` — virtual display + noVNC lifecycle.
 - `src/cli/vault/*` — encrypted auth vault implementation.
 - `src/cli/server/manager.ts` — daemon lifecycle and health checks.

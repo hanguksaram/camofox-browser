@@ -13,6 +13,8 @@
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [CLI](#cli)
+- [Console Capture](#console-capture)
+- [Playwright Tracing](#playwright-tracing)
 - [Security](#security)
 - [Usage with AI Agents](#usage-with-ai-agents)
 - [Architecture](#architecture)
@@ -56,9 +58,11 @@
 - **YouTube Transcript Extraction** — yt-dlp primary pipeline with browser fallback
 - **Snapshot Pagination** — offset-based windowing for large page snapshots
 - **Browser Health Monitoring** — health probe with recovery/degraded state tracking
-- 🖥️ **CLI Mode** — 47+ commands for terminal-based browser automation
+- 🖥️ **CLI Mode** — 50+ commands for terminal-based browser automation
 - 🔐 **Auth Vault** — AES-256-GCM encrypted credential storage (LLM-safe)
 - 📜 **Pipeline Scripting** — Execute command scripts from files
+- 🔍 **Console Capture** — capture and filter browser console messages and uncaught errors
+- 📼 **Playwright Tracing** — record and export Playwright traces for debugging
 
 ## Quick Start
 
@@ -270,6 +274,28 @@ camofox version                        # CLI + server version
 camofox info                           # Configuration info
 ```
 
+### Console Capture
+
+```bash
+camofox console [tabId]                  # View console messages
+camofox console [tabId] --type error     # Filter by type (log/warning/error/info/debug)
+camofox console [tabId] --clear          # View then clear messages
+camofox errors [tabId]                   # View uncaught JavaScript errors
+camofox errors [tabId] --clear           # View then clear errors
+```
+
+### Playwright Tracing
+
+```bash
+camofox trace start [tabId]              # Start recording trace
+camofox trace stop [tabId] [-o file.zip] # Stop and save trace ZIP
+camofox trace chunk-start [tabId]        # Start new trace chunk
+camofox trace chunk-stop [tabId] [-o f]  # Stop chunk and save ZIP
+camofox trace status [tabId]             # Check active trace status
+```
+
+View traces at [trace.playwright.dev](https://trace.playwright.dev)
+
 ### Global Options
 
 | Flag | Env Var | Description | Default |
@@ -326,6 +352,9 @@ This works with **Claude Code**, **Codex**, **Cursor**, **Gemini CLI**, **GitHub
 |-------|-------|----------|
 | `camofox-browser` | Full coverage (CLI + API + OpenClaw) | Complete reference |
 | `camofox-cli` | CLI-only (50 commands) | Terminal-first workflows |
+| `dogfood` | QA testing workflow | Systematic web app testing |
+| `gemini-image` | Gemini image generation | AI image automation |
+| `reddit` | Reddit automation | Reddit posting/commenting |
 
 The installer will prompt you to choose which skills and which agents to configure.
 
@@ -413,6 +442,7 @@ Note: For any endpoint that targets an existing tab (`/tabs/:tabId/...`), the se
 | POST | `/tabs/:tabId/type` | Type into an element by `ref` or CSS `selector` | Body: `userId` + (`ref` or `selector`) + `text` | None |
 | POST | `/tabs/:tabId/press` | Press a key (e.g. `Enter`, `Escape`) | Body: `userId` + `key` | None |
 | POST | `/tabs/:tabId/scroll` | Scroll up/down by pixels | Body: `userId` | None |
+| POST | `/tabs/:tabId/scroll-element` | Scroll specific element into view | Body: userId, ref/selector | None |
 | POST | `/tabs/:tabId/back` | Go back | Body: `userId` | None |
 | POST | `/tabs/:tabId/forward` | Go forward | Body: `userId` | None |
 | POST | `/tabs/:tabId/refresh` | Refresh | Body: `userId` | None |
@@ -422,6 +452,23 @@ Note: For any endpoint that targets an existing tab (`/tabs/:tabId/...`), the se
 | DELETE | `/tabs/:tabId` | Close a tab (expects JSON body: `{ "userId": "..." }`) | Body: `userId` | None |
 | DELETE | `/tabs/group/:listItemId` | Close a tab group (expects JSON body: `{ "userId": "..." }`) | Body: `userId` | None |
 | DELETE | `/sessions/:userId` | Close all sessions for a user | Path: `userId` | None |
+| GET | `/tabs/:tabId/cookies` | Export tab cookies | Query: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| GET | `/tabs/:tabId/downloads` | List tab downloads | Query: `userId` | None |
+| GET | `/users/:userId/downloads` | List user downloads | Path: `userId` | None |
+| GET | `/downloads/:downloadId` | Download metadata | Query: `userId` | None |
+| GET | `/downloads/:downloadId/content` | Stream download content | Query: `userId` | None |
+| DELETE | `/downloads/:downloadId` | Delete tracked download | Body or Query: `userId` | None |
+| POST | `/tabs/:tabId/extract-resources` | Extract downloadable resources | Body: `userId` | None |
+| POST | `/tabs/:tabId/batch-download` | Batch download resources | Body: `userId` | None |
+| POST | `/tabs/:tabId/resolve-blobs` | Resolve blob URLs to base64 | Body: `userId` + `urls[]` | None |
+| POST | `/tabs/:tabId/trace/start` | Start trace recording | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/trace/stop` | Stop and save trace ZIP | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/trace/chunk/start` | Start trace chunk | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/trace/chunk/stop` | Stop chunk and save ZIP | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| GET | `/tabs/:tabId/trace/status` | Check trace status | Query: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| GET | `/tabs/:tabId/console` | Get console messages | Query: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| GET | `/tabs/:tabId/errors` | Get uncaught JS errors | Query: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/console/clear` | Clear console + errors | Body or Query: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 
 ### Toggle Display Mode
 ```bash
@@ -455,10 +502,6 @@ POST /sessions/:userId/toggle-display
 ```
 
 The VNC session auto-terminates after 2 minutes (configurable via `CAMOFOX_VNC_TIMEOUT_MS`).
-
-| Endpoint | Description | Required |
-|----------|-------------|----------|
-| `POST /youtube/transcript` | Extract transcript from YouTube video | `url`, `languages?` |
 
 ### Evaluate JavaScript
 Execute a JavaScript expression in the page context and return the JSON-serializable result.
@@ -562,6 +605,18 @@ Custom presets: set `CAMOFOX_PRESETS_FILE=/path/to/presets.json` (JSON object; k
 | `CAMOFOX_EVAL_EXTENDED_RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window duration in ms |
 | `CAMOFOX_COOKIES_DIR` | `~/.camofox/cookies` | Directory used by the OpenClaw plugin cookie tool |
 | `CAMOFOX_PROFILES_DIR` | `~/.camofox/profiles` | Profile storage directory (persistent per-user Firefox profiles) |
+| `CAMOFOX_DOWNLOADS_DIR` | `~/.camofox/downloads` | Download artifact directory |
+| `CAMOFOX_DOWNLOAD_TTL_MS` | `86400000` | Download metadata retention TTL |
+| `CAMOFOX_MAX_DOWNLOAD_SIZE_MB` | `100` | Max single download size |
+| `CAMOFOX_MAX_BATCH_CONCURRENCY` | `5` | Batch download concurrency cap |
+| `CAMOFOX_MAX_BLOB_SIZE_MB` | `5` | Max blob payload size |
+| `CAMOFOX_MAX_DOWNLOADS_PER_USER` | `500` | Per-user download record cap |
+| `HANDLER_TIMEOUT_MS` | `30000` | Handler timeout fallback |
+| `MAX_CONCURRENT_PER_USER` | `3` | Concurrent operations per user |
+| `CAMOFOX_VNC_BASE_PORT` | `6080` | noVNC/websockify base port |
+| `CAMOFOX_VNC_HOST` | `localhost` | noVNC host in returned URL |
+| `CAMOFOX_CLI_USER` | `cli-default` | Default CLI user id |
+| `CAMOFOX_IDLE_TIMEOUT_MS` | `1800000` | CLI server idle timeout |
 | `CAMOFOX_PRESETS_FILE` | (unset) | Optional JSON file defining/overriding geo presets |
 | `CAMOFOX_SESSION_TIMEOUT` | `1800000` | Session idle timeout in ms (min `60000`) |
 | `CAMOFOX_MAX_SESSIONS` | `50` | Maximum concurrent sessions |
@@ -632,6 +687,8 @@ fly deploy
 src/
 ├── cli/
 │   ├── commands/       # Command modules (core, navigation, interaction, etc.)
+│   │   ├── console.ts   # Console capture commands
+│   │   └── trace.ts     # Playwright tracing commands
 │   ├── vault/          # Auth vault (encryption, storage)
 │   ├── server/         # Server lifecycle management
 │   ├── transport/      # HTTP transport layer
@@ -640,17 +697,30 @@ src/
 ├── server.ts           # Express app entry point
 ├── types.ts            # Shared TypeScript interfaces
 ├── routes/
-│   ├── core.ts         # Core REST API (~21 endpoints)
+│   ├── core.ts         # Core REST API (~42 endpoints)
 │   └── openclaw.ts     # OpenClaw compatibility (~7 endpoints)
 ├── services/
 │   ├── browser.ts      # Browser lifecycle + persistent context pool
+│   ├── batch-downloader.ts # Batch download orchestrator
+│   ├── context-pool.ts # Browser context pool with LRU eviction
+│   ├── download.ts     # Download tracking service
 │   ├── health.ts       # Browser health tracking
+│   ├── resource-extractor.ts # Page resource extraction
 │   ├── session.ts      # Session management + limits
 │   ├── tab.ts          # Tab operations (snapshot/click/type/etc.)
+│   ├── tracing.ts      # Playwright tracing service
+│   ├── vnc.ts          # VNC/virtual display lifecycle
 │   └── youtube.ts      # YouTube transcript extraction
-├── middleware/         # Auth, logging, errors
+├── middleware/
+│   ├── auth.ts         # API/admin auth helpers
+│   ├── errors.ts       # Error handling
+│   ├── logging.ts      # Structured logging
+│   └── rate-limit.ts   # In-memory rate limiter
 └── utils/
   ├── config.ts       # Environment config parsing
+  ├── cookies.ts      # Cookie utilities
+  ├── download-helpers.ts # Download helper functions
+  ├── launcher.ts     # Browser launcher utilities
   ├── macros.ts       # Search macro expansion
   ├── presets.ts      # Geo preset definitions/loader
   └── snapshot.ts     # Snapshot truncation/windowing

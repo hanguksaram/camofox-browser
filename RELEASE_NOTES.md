@@ -1,3 +1,37 @@
+## 🦊 CamoFox Browser Server v2.0.0
+
+**Release Date:** 2026-03-03
+
+### Highlights
+- **🖥️ CLI Mode** — 50+ commands for terminal-based browser automation
+- **🔐 Auth Vault** — AES-256-GCM encrypted credential storage (LLM-safe)
+- **📜 Pipeline Scripting** — Execute command scripts from files
+- **🔧 Session Management** — Save/load browser profiles with cookies
+- **🔍 Console Capture** — Capture and filter browser console messages
+- **📼 Playwright Tracing** — Record traces for debugging
+- **📥 Download Management** — Track, export, batch-download page resources
+- **🍪 Cookie Management** — Import/export cookies per tab
+
+### Breaking Changes
+- Node.js >=20 required (was >=18)
+- New `engines.node` constraint in package.json
+
+### Key New Features
+- **CLI Tool**: Full browser automation from terminal — open, navigate, click, type, wait, eval, screenshot, snapshot, scroll, fill forms, press keys, search web
+- **Auth Vault**: Store credentials encrypted at rest with AES-256-GCM. No plaintext passwords in command history or logs
+- **Session Profiles**: Save/load browser state (cookies, local storage) for quick re-authentication
+- **Pipeline Scripting**: Batch execute commands from `.camofox` script files with comment support
+- **Console Capture**: `camofox console` and `camofox errors` to capture browser logs
+- **Playwright Tracing**: `camofox trace start/stop` with chunk support for targeted debugging
+- **Download Manager**: Track browser downloads, extract page resources, batch download, resolve blob URLs
+- **Output Formatting**: `--format json` flag for machine-readable output across all commands
+
+### Infrastructure
+- Daemonized server management (`camofox server start/stop/status`)
+- Auto-start daemon on first CLI command
+- Server version exposed in `/health` endpoint
+- Health monitoring with pool metrics
+
 ## 🦊 CamoFox Browser Server v1.0.0
 
 ### Highlights
