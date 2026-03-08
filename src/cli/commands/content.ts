@@ -268,11 +268,12 @@ export function registerContentCommands(program: Command, context: CliContext): 
 					const userId = resolveCommandUser({ command, user: options.user });
 					const tabId = requireTabId(resolveTabId({ tabId: tabIdArg }), options);
 					const timeout = parseTimeout(options.timeout);
+					const httpTimeout = (timeout ?? 20000) + 5000;
 					const body: Record<string, unknown> = { tabId, userId, condition };
 					if (timeout !== undefined) body.timeout = timeout;
 
 					try {
-						await context.getTransport().post('/wait-for', body);
+						await context.getTransport().post('/wait-for', body, { timeoutMs: httpTimeout });
 					} catch (error) {
 						if (!(error instanceof HttpError) || error.status !== 404) {
 							throw error;
@@ -284,7 +285,7 @@ export function registerContentCommands(program: Command, context: CliContext): 
 								userId,
 								timeout,
 								waitForNetwork: normalized === 'networkidle',
-							});
+							}, { timeoutMs: httpTimeout });
 						} else {
 							const selectorJson = JSON.stringify(condition);
 							const timeoutMs = timeout ?? 10000;
@@ -293,7 +294,7 @@ export function registerContentCommands(program: Command, context: CliContext): 
 								userId,
 								expression,
 								timeout: timeoutMs + 1000,
-							});
+							}, { timeoutMs: httpTimeout });
 						}
 					}
 

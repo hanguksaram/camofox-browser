@@ -1,4 +1,13 @@
-const { withTimeout, safePageClose } = require('../../dist/src/services/tab');
+const {
+  LONG_TEXT_THRESHOLD,
+  TYPE_TIMEOUT_BASE_MS,
+  TYPE_TIMEOUT_MAX_MS,
+  TYPE_TIMEOUT_PER_CHAR_MS,
+  calculateTypeTimeoutMs,
+  safePageClose,
+  smartFill,
+  withTimeout,
+} = require('../../dist/src/services/tab');
 
 function deferred() {
   let resolve;
@@ -68,6 +77,65 @@ describe('tab.ts utilities (unit)', () => {
       const err = new Error('boom');
       await expect(withTimeout(Promise.reject(err), 1000, 'reject-op')).rejects.toBe(err);
       expect(jest.getTimerCount()).toBe(0);
+    });
+  });
+
+  describe('calculateTypeTimeoutMs()', () => {
+    test('uses the base timeout for short text', () => {
+      expect(calculateTypeTimeoutMs('')).toBe(TYPE_TIMEOUT_BASE_MS);
+      expect(calculateTypeTimeoutMs('short text')).toBe(TYPE_TIMEOUT_BASE_MS + 'short text'.length * TYPE_TIMEOUT_PER_CHAR_MS);
+    });
+
+    test('caps long text timeouts at the configured maximum', () => {
+      expect(calculateTypeTimeoutMs('a'.repeat(5000))).toBe(TYPE_TIMEOUT_MAX_MS);
+    });
+  });
+
+  describe('smartFill()', () => {
+    test('uses bulk insert for long input text', async () => {
+      const locator = {
+        evaluate: jest
+          .fn()
+          .mockResolvedValueOnce({ isContentEditable: false, tagName: 'INPUT' })
+          .mockResolvedValueOnce(undefined),
+        fill: jest.fn(),
+        focus: jest.fn(),
+      };
+      const page = {
+        keyboard: {
+          press: jest.fn(),
+          insertText: jest.fn(),
+        },
+      };
+
+      await smartFill(locator, page, 'x'.repeat(LONG_TEXT_THRESHOLD));
+
+      expect(locator.evaluate).toHaveBeenCalledTimes(2);
+      expect(locator.fill).not.toHaveBeenCalled();
+      expect(page.keyboard.press).not.toHaveBeenCalled();
+      expect(page.keyboard.insertText).not.toHaveBeenCalled();
+    });
+
+    test('keeps humanized typing for short contenteditable text', async () => {
+      const locator = {
+        evaluate: jest.fn().mockResolvedValue({ isContentEditable: true, tagName: 'DIV' }),
+        fill: jest.fn(),
+        focus: jest.fn().mockResolvedValue(undefined),
+      };
+      const page = {
+        keyboard: {
+          press: jest.fn().mockResolvedValue(undefined),
+          insertText: jest.fn().mockResolvedValue(undefined),
+        },
+      };
+
+      await smartFill(locator, page, 'short text');
+
+      expect(locator.focus).toHaveBeenCalledTimes(1);
+      expect(page.keyboard.press).toHaveBeenNthCalledWith(1, 'ControlOrMeta+a');
+      expect(page.keyboard.press).toHaveBeenNthCalledWith(2, 'Backspace');
+      expect(page.keyboard.insertText).toHaveBeenCalledWith('short text');
+      expect(locator.fill).not.toHaveBeenCalled();
     });
   });
 

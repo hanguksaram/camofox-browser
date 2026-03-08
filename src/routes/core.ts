@@ -40,6 +40,7 @@ import {
 	screenshotTab,
 	scrollElementTab,
 	snapshotTab,
+	calculateTypeTimeoutMs,
 	typeTab,
 	safePageClose,
 	validateUrl,
@@ -500,7 +501,8 @@ router.post('/tabs/:tabId/type', async (req: Request<{ tabId: string }, unknown,
 
 		const { tabState } = found;
 		tabState.toolCalls++;
-		const result = await withTimeout(typeTab(tabId, tabState, { ref, selector, text: String(text ?? '') }), CONFIG.handlerTimeoutMs, 'type');
+		const textValue = String(text ?? '');
+		const result = await withTimeout(typeTab(tabId, tabState, { ref, selector, text: textValue }), calculateTypeTimeoutMs(textValue), 'type');
 		return res.json(result);
 	} catch (err) {
 		const statusCode = (err as { statusCode?: number } | null)?.statusCode;

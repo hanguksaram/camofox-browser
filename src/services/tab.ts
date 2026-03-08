@@ -36,12 +36,17 @@ const SKIP_PATTERNS: ReadonlyArray<RegExp> = [/date/i, /calendar/i, /picker/i, /
 
 const MAX_SNAPSHOT_NODES = 500;
 
-const MAX_EVAL_TIMEOUT = 30000;
+const MAX_EVAL_TIMEOUT = 300000;
 const DEFAULT_EVAL_TIMEOUT = 5000;
 const MAX_EVAL_EXTENDED_TIMEOUT = 300000;
 const DEFAULT_EVAL_EXTENDED_TIMEOUT = 30000;
 const MAX_RESULT_SIZE = 1048576; // 1MB
 const CONSOLE_BUFFER_SIZE = Math.max(100, parseInt(process.env.CAMOFOX_CONSOLE_BUFFER_SIZE || '1000', 10));
+
+export const LONG_TEXT_THRESHOLD = 400;
+export const TYPE_TIMEOUT_BASE_MS = 10000;
+export const TYPE_TIMEOUT_PER_CHAR_MS = 80;
+export const TYPE_TIMEOUT_MAX_MS = 120000;
 
 interface EvaluateConfig {
 	maxTimeout: number;
@@ -100,6 +105,12 @@ export function clearTabLock(tabId: string): void {
 
 export function clearAllTabLocks(): void {
 	tabLocks.clear();
+}
+
+export function calculateTypeTimeoutMs(text: string): number {
+	const textLength = typeof text === 'string' ? text.length : 0;
+	const computedTimeoutMs = TYPE_TIMEOUT_BASE_MS + textLength * TYPE_TIMEOUT_PER_CHAR_MS;
+	return Math.min(Math.max(computedTimeoutMs, TYPE_TIMEOUT_BASE_MS), TYPE_TIMEOUT_MAX_MS);
 }
 
 
@@ -536,13 +547,75 @@ export async function clickTab(tabId: string, tabState: TabState, params: { ref?
  * Prevents text doubling on rich-text editors (Lexical, ProseMirror, Slate, etc.)
  */
 export async function smartFill(locator: Locator, page: Page, text: string): Promise<void> {
-	const isContentEditable = await locator.evaluate((el) => (el as any).isContentEditable).catch(() => false);
+	const elementMetadata = await locator
+		.evaluate((el) => ({
+			isContentEditable: Boolean((el as any).isContentEditable),
+			tagName: typeof (el as { tagName?: string }).tagName === 'string' ? (el as { tagName: string }).tagName : '',
+		}))
+		.catch(() => ({ isContentEditable: false, tagName: '' }));
+	const { isContentEditable, tagName } = elementMetadata;
+	const shouldUseBulkInsert = text.length >= LONG_TEXT_THRESHOLD;
+
+	if (shouldUseBulkInsert) {
+		// Long text would exceed the humanized per-character route budget, so set it in one DOM operation.
+		await locator.evaluate((element, value) => {
+			const browserGlobal = globalThis as any;
+			const browserDocument = browserGlobal.document as any;
+			const eventCtor = browserGlobal.Event as { new(type: string, init?: { bubbles?: boolean }): Event } | undefined;
+			const target = element as any;
+			const dispatch = (eventName: string) => {
+				if (typeof eventCtor === 'function') {
+					target.dispatchEvent(new eventCtor(eventName, { bubbles: true }));
+				}
+			};
+
+			if (typeof target.focus === 'function') {
+				target.focus();
+			}
+			dispatch('focus');
+
+			if (target.isContentEditable) {
+				const selection = browserDocument?.defaultView?.getSelection?.() ?? browserGlobal.getSelection?.();
+				if (selection && browserDocument?.createRange) {
+					const range = browserDocument.createRange();
+					range.selectNodeContents(target);
+					selection.removeAllRanges();
+					selection.addRange(range);
+				}
+
+				const inserted = typeof browserDocument?.execCommand === 'function'
+					? browserDocument.execCommand('insertText', false, value)
+					: false;
+				if (!inserted) {
+					target.textContent = value;
+				}
+			} else if (target instanceof browserGlobal.HTMLInputElement || target instanceof browserGlobal.HTMLTextAreaElement) {
+				const prototype = target instanceof browserGlobal.HTMLTextAreaElement
+					? browserGlobal.HTMLTextAreaElement.prototype
+					: browserGlobal.HTMLInputElement.prototype;
+				const nativeSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+				if (typeof nativeSetter === 'function') {
+					nativeSetter.call(target, value);
+				} else {
+					target.value = value;
+				}
+			} else {
+				target.textContent = value;
+			}
+
+			dispatch('input');
+			dispatch('change');
+		}, text);
+		return;
+	}
 
 	if (isContentEditable) {
 		await locator.focus();
 		await page.keyboard.press('ControlOrMeta+a');
 		await page.keyboard.press('Backspace');
 		await page.keyboard.insertText(text);
+	} else if (tagName === 'INPUT' || tagName === 'TEXTAREA') {
+		await locator.fill(text, { timeout: 10000 });
 	} else {
 		await locator.fill(text, { timeout: 10000 });
 	}
