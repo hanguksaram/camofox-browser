@@ -20,25 +20,40 @@ export interface ServerEnv {
   PATH?: string;
   HOME?: string;
   NODE_ENV?: string;
+  DISPLAY?: string;
+  HANDLER_TIMEOUT_MS?: string;
+  MAX_CONCURRENT_PER_USER?: string;
   CAMOFOX_ADMIN_KEY?: string;
   CAMOFOX_API_KEY?: string;
+  CAMOFOX_CONSOLE_BUFFER_SIZE?: string;
   CAMOFOX_COOKIES_DIR?: string;
   CAMOFOX_PROFILES_DIR?: string;
   CAMOFOX_DOWNLOADS_DIR?: string;
   CAMOFOX_DOWNLOAD_TTL_MS?: string;
   CAMOFOX_MAX_DOWNLOAD_SIZE_MB?: string;
+  CAMOFOX_IDLE_TIMEOUT_MS?: string;
   CAMOFOX_MAX_BATCH_CONCURRENCY?: string;
   CAMOFOX_MAX_BLOB_SIZE_MB?: string;
   CAMOFOX_MAX_DOWNLOADS_PER_USER?: string;
+  CAMOFOX_MAX_SESSIONS?: string;
   CAMOFOX_MAX_SNAPSHOT_CHARS?: string;
+  CAMOFOX_MAX_SNAPSHOT_NODES?: string;
+  CAMOFOX_MAX_TABS?: string;
+  CAMOFOX_PRESETS_FILE?: string;
+  CAMOFOX_SESSION_TIMEOUT?: string;
   CAMOFOX_SNAPSHOT_TAIL_CHARS?: string;
   CAMOFOX_BUILDREFS_TIMEOUT_MS?: string;
   CAMOFOX_TAB_LOCK_TIMEOUT_MS?: string;
+  CAMOFOX_TRACES_DIR?: string;
+  CAMOFOX_TRACE_MAX_DURATION_MS?: string;
   CAMOFOX_HEALTH_PROBE_INTERVAL_MS?: string;
   CAMOFOX_FAILURE_THRESHOLD?: string;
+  CAMOFOX_VNC_BASE_PORT?: string;
+  CAMOFOX_VNC_HOST?: string;
   CAMOFOX_YT_DLP_TIMEOUT_MS?: string;
   CAMOFOX_YT_BROWSER_TIMEOUT_MS?: string;
   CAMOFOX_VNC_RESOLUTION?: string;
+  CAMOFOX_VNC_TIMEOUT_MS?: string;
   CAMOFOX_HEADLESS?: string;
   CAMOFOX_EVAL_EXTENDED_RATE_LIMIT_MAX?: string;
   CAMOFOX_EVAL_EXTENDED_RATE_LIMIT_WINDOW_MS?: string;
@@ -65,6 +80,18 @@ export interface AppConfig {
   maxConcurrentPerUser: number;
   maxSnapshotChars: number;
   snapshotTailChars: number;
+  tracesDir: string;
+  traceMaxDurationMs: number;
+  maxSnapshotNodes: number;
+  consoleBufferSize: number;
+  sessionTimeoutMs: number;
+  maxSessions: number;
+  maxTabsPerSession: number;
+  vncTimeoutMs: number;
+  vncBasePort: number;
+  vncHost: string;
+  presetsFile: string | undefined;
+  idleTimeoutMs: number;
   buildRefsTimeoutMs: number;
   tabLockTimeoutMs: number;
   healthProbeIntervalMs: number;
@@ -85,25 +112,37 @@ export interface ConfigEnv extends NodeJS.ProcessEnv {
   NODE_ENV?: string;
   CAMOFOX_ADMIN_KEY?: string;
   CAMOFOX_API_KEY?: string;
+  CAMOFOX_CONSOLE_BUFFER_SIZE?: string;
   CAMOFOX_COOKIES_DIR?: string;
   CAMOFOX_PROFILES_DIR?: string;
   CAMOFOX_DOWNLOADS_DIR?: string;
   CAMOFOX_DOWNLOAD_TTL_MS?: string;
   CAMOFOX_MAX_DOWNLOAD_SIZE_MB?: string;
+  CAMOFOX_IDLE_TIMEOUT_MS?: string;
   CAMOFOX_MAX_BATCH_CONCURRENCY?: string;
   CAMOFOX_MAX_BLOB_SIZE_MB?: string;
   CAMOFOX_MAX_DOWNLOADS_PER_USER?: string;
+  CAMOFOX_MAX_SESSIONS?: string;
   CAMOFOX_MAX_SNAPSHOT_CHARS?: string;
+  CAMOFOX_MAX_SNAPSHOT_NODES?: string;
+  CAMOFOX_MAX_TABS?: string;
+  CAMOFOX_PRESETS_FILE?: string;
   CAMOFOX_SNAPSHOT_TAIL_CHARS?: string;
+  CAMOFOX_SESSION_TIMEOUT?: string;
   HANDLER_TIMEOUT_MS?: string;
   MAX_CONCURRENT_PER_USER?: string;
   CAMOFOX_BUILDREFS_TIMEOUT_MS?: string;
   CAMOFOX_TAB_LOCK_TIMEOUT_MS?: string;
+  CAMOFOX_TRACES_DIR?: string;
+  CAMOFOX_TRACE_MAX_DURATION_MS?: string;
   CAMOFOX_HEALTH_PROBE_INTERVAL_MS?: string;
   CAMOFOX_FAILURE_THRESHOLD?: string;
   CAMOFOX_YT_DLP_TIMEOUT_MS?: string;
   CAMOFOX_YT_BROWSER_TIMEOUT_MS?: string;
+  CAMOFOX_VNC_BASE_PORT?: string;
+  CAMOFOX_VNC_HOST?: string;
   CAMOFOX_VNC_RESOLUTION?: string;
+  CAMOFOX_VNC_TIMEOUT_MS?: string;
   CAMOFOX_HEADLESS?: string;
   CAMOFOX_EVAL_EXTENDED_RATE_LIMIT_MAX?: string;
   CAMOFOX_EVAL_EXTENDED_RATE_LIMIT_WINDOW_MS?: string;
@@ -113,6 +152,7 @@ export interface ConfigEnv extends NodeJS.ProcessEnv {
   PROXY_PASSWORD?: string;
   PATH?: string;
   HOME?: string;
+  DISPLAY?: string;
 }
 
 function parsePositiveIntOrDefault(raw: string | undefined, fallback: number): number {
@@ -180,6 +220,18 @@ export function loadConfig(env: ConfigEnv = process.env): AppConfig {
   const maxBatchConcurrency = parsePositiveIntOrDefault(env.CAMOFOX_MAX_BATCH_CONCURRENCY, 5);
   const maxBlobSizeMb = parsePositiveIntOrDefault(env.CAMOFOX_MAX_BLOB_SIZE_MB, 5);
   const maxDownloadsPerUser = parsePositiveIntOrDefault(env.CAMOFOX_MAX_DOWNLOADS_PER_USER, 500);
+  const tracesDir = env.CAMOFOX_TRACES_DIR || join(os.homedir(), '.camofox', 'traces');
+  const traceMaxDurationMs = parsePositiveIntOrDefault(env.CAMOFOX_TRACE_MAX_DURATION_MS, 300000);
+  const maxSnapshotNodes = parsePositiveIntOrDefault(env.CAMOFOX_MAX_SNAPSHOT_NODES, 2000);
+  const consoleBufferSize = Math.max(100, parsePositiveIntOrDefault(env.CAMOFOX_CONSOLE_BUFFER_SIZE, 1000));
+  const sessionTimeoutMs = Math.max(60000, parsePositiveIntOrDefault(env.CAMOFOX_SESSION_TIMEOUT, 1800000));
+  const maxSessions = Math.max(1, parsePositiveIntOrDefault(env.CAMOFOX_MAX_SESSIONS, 50));
+  const maxTabsPerSession = Math.max(1, parsePositiveIntOrDefault(env.CAMOFOX_MAX_TABS, 10));
+  const vncTimeoutMs = Math.max(10000, parsePositiveIntOrDefault(env.CAMOFOX_VNC_TIMEOUT_MS, 120000));
+  const vncBasePort = Math.max(1, parsePositiveIntOrDefault(env.CAMOFOX_VNC_BASE_PORT, 6080));
+  const vncHost = env.CAMOFOX_VNC_HOST || 'localhost';
+  const presetsFile = env.CAMOFOX_PRESETS_FILE || undefined;
+  const idleTimeoutMs = parsePositiveIntOrDefault(env.CAMOFOX_IDLE_TIMEOUT_MS, 1800000);
 
   return {
     port,
@@ -198,6 +250,18 @@ export function loadConfig(env: ConfigEnv = process.env): AppConfig {
     maxConcurrentPerUser,
     maxSnapshotChars,
     snapshotTailChars,
+    tracesDir,
+    traceMaxDurationMs,
+    maxSnapshotNodes,
+    consoleBufferSize,
+    sessionTimeoutMs,
+    maxSessions,
+    maxTabsPerSession,
+    vncTimeoutMs,
+    vncBasePort,
+    vncHost,
+    presetsFile,
+    idleTimeoutMs,
     buildRefsTimeoutMs,
     tabLockTimeoutMs,
     healthProbeIntervalMs,
@@ -219,25 +283,40 @@ export function loadConfig(env: ConfigEnv = process.env): AppConfig {
       PATH: env.PATH,
       HOME: env.HOME,
       NODE_ENV: env.NODE_ENV,
+      DISPLAY: env.DISPLAY,
+      HANDLER_TIMEOUT_MS: env.HANDLER_TIMEOUT_MS,
+      MAX_CONCURRENT_PER_USER: env.MAX_CONCURRENT_PER_USER,
       CAMOFOX_ADMIN_KEY: env.CAMOFOX_ADMIN_KEY,
       CAMOFOX_API_KEY: env.CAMOFOX_API_KEY,
+      CAMOFOX_CONSOLE_BUFFER_SIZE: env.CAMOFOX_CONSOLE_BUFFER_SIZE,
       CAMOFOX_COOKIES_DIR: env.CAMOFOX_COOKIES_DIR,
       CAMOFOX_PROFILES_DIR: env.CAMOFOX_PROFILES_DIR,
       CAMOFOX_DOWNLOADS_DIR: env.CAMOFOX_DOWNLOADS_DIR,
       CAMOFOX_DOWNLOAD_TTL_MS: env.CAMOFOX_DOWNLOAD_TTL_MS,
       CAMOFOX_MAX_DOWNLOAD_SIZE_MB: env.CAMOFOX_MAX_DOWNLOAD_SIZE_MB,
+      CAMOFOX_IDLE_TIMEOUT_MS: env.CAMOFOX_IDLE_TIMEOUT_MS,
       CAMOFOX_MAX_BATCH_CONCURRENCY: env.CAMOFOX_MAX_BATCH_CONCURRENCY,
       CAMOFOX_MAX_BLOB_SIZE_MB: env.CAMOFOX_MAX_BLOB_SIZE_MB,
       CAMOFOX_MAX_DOWNLOADS_PER_USER: env.CAMOFOX_MAX_DOWNLOADS_PER_USER,
+      CAMOFOX_MAX_SESSIONS: env.CAMOFOX_MAX_SESSIONS,
       CAMOFOX_MAX_SNAPSHOT_CHARS: env.CAMOFOX_MAX_SNAPSHOT_CHARS,
+      CAMOFOX_MAX_SNAPSHOT_NODES: env.CAMOFOX_MAX_SNAPSHOT_NODES,
+      CAMOFOX_MAX_TABS: env.CAMOFOX_MAX_TABS,
+      CAMOFOX_PRESETS_FILE: env.CAMOFOX_PRESETS_FILE,
+      CAMOFOX_SESSION_TIMEOUT: env.CAMOFOX_SESSION_TIMEOUT,
       CAMOFOX_SNAPSHOT_TAIL_CHARS: env.CAMOFOX_SNAPSHOT_TAIL_CHARS,
       CAMOFOX_BUILDREFS_TIMEOUT_MS: env.CAMOFOX_BUILDREFS_TIMEOUT_MS,
       CAMOFOX_TAB_LOCK_TIMEOUT_MS: env.CAMOFOX_TAB_LOCK_TIMEOUT_MS,
+      CAMOFOX_TRACES_DIR: env.CAMOFOX_TRACES_DIR,
+      CAMOFOX_TRACE_MAX_DURATION_MS: env.CAMOFOX_TRACE_MAX_DURATION_MS,
       CAMOFOX_HEALTH_PROBE_INTERVAL_MS: env.CAMOFOX_HEALTH_PROBE_INTERVAL_MS,
       CAMOFOX_FAILURE_THRESHOLD: env.CAMOFOX_FAILURE_THRESHOLD,
+      CAMOFOX_VNC_BASE_PORT: env.CAMOFOX_VNC_BASE_PORT,
+      CAMOFOX_VNC_HOST: env.CAMOFOX_VNC_HOST,
       CAMOFOX_YT_DLP_TIMEOUT_MS: env.CAMOFOX_YT_DLP_TIMEOUT_MS,
       CAMOFOX_YT_BROWSER_TIMEOUT_MS: env.CAMOFOX_YT_BROWSER_TIMEOUT_MS,
       CAMOFOX_VNC_RESOLUTION: env.CAMOFOX_VNC_RESOLUTION,
+      CAMOFOX_VNC_TIMEOUT_MS: env.CAMOFOX_VNC_TIMEOUT_MS,
       CAMOFOX_HEADLESS: env.CAMOFOX_HEADLESS,
       CAMOFOX_EVAL_EXTENDED_RATE_LIMIT_MAX: env.CAMOFOX_EVAL_EXTENDED_RATE_LIMIT_MAX,
       CAMOFOX_EVAL_EXTENDED_RATE_LIMIT_WINDOW_MS: env.CAMOFOX_EVAL_EXTENDED_RATE_LIMIT_WINDOW_MS,
