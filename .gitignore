@@ -42,3 +42,7 @@ playwright-report/
 
 # Verification artifacts
 .verify-*
+.gitnexus
+.claude
+CLAUDE.md
+AGENTS.md
