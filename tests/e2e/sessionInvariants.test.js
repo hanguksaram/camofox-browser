@@ -175,6 +175,126 @@ describe('Session invariants', () => {
     expect(response.data.error).toBe('No canonical profile');
   });
 
+  test('failed first tab create does not leave stale canonical profile', async () => {
+    const userId = trackUser('fail-create');
+
+    const failed = await postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'default',
+      url: 'chrome://invalid-url',
+      preset: 'us-east',
+    });
+    expect(failed.res.status).toBeGreaterThanOrEqual(400);
+
+    const openclaw = await postJson(serverUrl, '/tabs/open', {
+      userId,
+      url: `${testSiteUrl}/pageA`,
+    });
+    expect(openclaw.res.status).toBe(409);
+    expect(openclaw.data.error).toBe('No canonical profile');
+
+    const cookie = await postJson(serverUrl, `/sessions/${encodeURIComponent(userId)}/cookies`, {
+      cookies: [{ name: 'session', value: '1', domain: '.example.com' }],
+    });
+    expect(cookie.res.status).toBe(409);
+    expect(cookie.data.error).toBe('No canonical profile');
+  });
+
+  test('runtime failure during first tab create rolls back canonical profile', async () => {
+    const userId = trackUser('rollback');
+
+    // Use a URL that passes validation (http scheme) but fails at navigation
+    const failed = await postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'default',
+      url: 'http://localhost:1/',
+      preset: 'us-east',
+    });
+    expect(failed.res.status).toBe(500);
+
+    // Canonical must have been rolled back
+    const openclaw = await postJson(serverUrl, '/tabs/open', {
+      userId,
+      url: testSiteUrl + '/pageA',
+    });
+    expect(openclaw.res.status).toBe(409);
+    expect(openclaw.data.error).toBe('No canonical profile');
+
+    const cookie = await postJson(serverUrl, `/sessions/${encodeURIComponent(userId)}/cookies`, {
+      cookies: [{ name: 'session', value: '1', domain: '.example.com' }],
+    });
+    expect(cookie.res.status).toBe(409);
+    expect(cookie.data.error).toBe('No canonical profile');
+  }, 30000);
+
+  test('concurrent first-create: failing request does not corrupt canonical state', async () => {
+    const userId = trackUser('concurrent');
+
+    const responseA = postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'a',
+      url: 'http://localhost:1/',
+      preset: 'us-east',
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+    const responseB = postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'b',
+      url: `${testSiteUrl}/pageA`,
+      preset: 'us-east',
+    });
+
+    const [a, b] = await Promise.all([responseA, responseB]);
+
+    expect(a.res.status).toBeGreaterThanOrEqual(400);
+
+    expect(b.res.status).toBe(200);
+    expect(b.data.tabId).toBeDefined();
+
+    const reuse = await postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'c',
+      url: `${testSiteUrl}/pageB`,
+    });
+    expect(reuse.res.status).toBe(200);
+    expect(reuse.data.tabId).toBeDefined();
+  }, 60000);
+
+  test('enforces per-user tab cap under canonical profile contract', async () => {
+    const userId = trackUser('tab-cap');
+
+    const first = await postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'default',
+      url: `${testSiteUrl}/pageA`,
+    });
+    expect(first.res.status).toBe(200);
+
+    let lastStatus = 200;
+    let tabCount = 1;
+    const tabIds = [first.data.tabId];
+    while (lastStatus === 200 && tabCount < 100) {
+      const resp = await postJson(serverUrl, '/tabs', {
+        userId,
+        sessionKey: `cap-${tabCount}`,
+        url: `${testSiteUrl}/pageA`,
+      });
+      lastStatus = resp.res.status;
+      if (lastStatus === 200) {
+        tabCount++;
+        tabIds.push(resp.data.tabId);
+      } else {
+        expect(lastStatus).toBe(429);
+        expect(resp.data.error).toMatch(/maximum tabs/i);
+      }
+    }
+
+    expect(lastStatus).toBe(429);
+    expect(tabCount).toBeGreaterThanOrEqual(2);
+    expect(tabIds.length).toBe(tabCount);
+  });
+
   test('explicit session close clears the canonical profile', async () => {
     const userId = trackUser('close');
 

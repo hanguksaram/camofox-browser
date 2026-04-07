@@ -36,8 +36,9 @@ export interface CanonicalProfile {
 // Survives passive context eviction; cleared only on explicit session close/cleanup.
 const canonicalProfiles = new Map<string, CanonicalProfile>();
 
-// Per-user establishment lock to serialize first-profile creation.
-const profileEstablishmentLocks = new Map<string, Promise<CanonicalProfile>>();
+// Per-user mutex covering the entire first-create lifecycle (establishment -> tab commit).
+// Prevents sibling requests from observing provisional canonical state.
+const firstCreateMutexes = new Map<string, { promise: Promise<boolean>; resolve: (committed: boolean) => void }>();
 
 const userConcurrency = new Map<string, { active: number; queue: Array<() => void> }>();
 
@@ -128,7 +129,11 @@ function cleanupSessionsForUserId(userId: string, reason: string, clearCanonical
 
 	if (clearCanonical) {
 		canonicalProfiles.delete(key);
-		profileEstablishmentLocks.delete(key);
+		const mutex = firstCreateMutexes.get(key);
+		if (mutex) {
+			mutex.resolve(false);
+			firstCreateMutexes.delete(key);
+		}
 	}
 
 	userConcurrency.delete(key);
@@ -161,43 +166,87 @@ export function hasCanonicalProfile(userId: unknown): boolean {
 	return canonicalProfiles.has(normalizeUserId(userId));
 }
 
-export async function establishCanonicalProfile(
+
+/**
+ * Try to acquire the first-create mutex for a user.
+ * Returns { acquired: true } if we are the first creator (mutex acquired).
+ * Returns { acquired: false, wait: Promise<boolean> } if another request is first-creating.
+ * The promise resolves to true (committed) or false (rolled back).
+ * If canonical already exists (committed), returns { acquired: false, wait: resolved-true }.
+ */
+export function acquireFirstCreateMutex(
 	userId: unknown,
-	resolved: ResolvedContextOptions | null,
-): Promise<CanonicalProfile> {
+): { acquired: true } | { acquired: false; wait: Promise<boolean> } {
 	const key = normalizeUserId(userId);
-	const existing = canonicalProfiles.get(key);
-	if (existing) return existing;
 
-	const pending = profileEstablishmentLocks.get(key);
-	if (pending) return pending;
-
-	const promise = (async (): Promise<CanonicalProfile> => {
-		const recheck = canonicalProfiles.get(key);
-		if (recheck) return recheck;
-
-		const profile: CanonicalProfile = {
-			resolvedOverrides: resolved,
-			hash: contextHash(resolved),
-			establishedAt: Date.now(),
-		};
-		canonicalProfiles.set(key, profile);
-		log('info', 'canonical profile established', { userId: key, hash: profile.hash });
-		return profile;
-	})();
-
-	profileEstablishmentLocks.set(key, promise);
-	try {
-		return await promise;
-	} finally {
-		profileEstablishmentLocks.delete(key);
+	if (canonicalProfiles.has(key)) {
+		return { acquired: false, wait: Promise.resolve(true) };
 	}
+
+	const existing = firstCreateMutexes.get(key);
+	if (existing) {
+		return { acquired: false, wait: existing.promise };
+	}
+
+	let resolve!: (committed: boolean) => void;
+	const promise = new Promise<boolean>((r) => {
+		resolve = r;
+	});
+	firstCreateMutexes.set(key, { promise, resolve });
+	return { acquired: true };
+}
+
+/**
+ * Commit: store the canonical profile and release the mutex (signaling success to waiters).
+ */
+export function commitCanonicalProfile(userId: unknown, resolved: ResolvedContextOptions | null): CanonicalProfile {
+	const key = normalizeUserId(userId);
+	const profile: CanonicalProfile = {
+		resolvedOverrides: resolved,
+		hash: contextHash(resolved),
+		establishedAt: Date.now(),
+	};
+	canonicalProfiles.set(key, profile);
+	const mutex = firstCreateMutexes.get(key);
+	if (mutex) {
+		mutex.resolve(true);
+		firstCreateMutexes.delete(key);
+	}
+	log('info', 'canonical profile committed', { userId: key, hash: profile.hash });
+	return profile;
+}
+
+/**
+ * Rollback: release the mutex (signaling failure to waiters). No canonical is stored.
+ */
+export function rollbackCanonicalMutex(userId: unknown): void {
+	const key = normalizeUserId(userId);
+	const mutex = firstCreateMutexes.get(key);
+	if (mutex) {
+		mutex.resolve(false);
+		firstCreateMutexes.delete(key);
+	}
+}
+
+/**
+ * Create a CanonicalProfile object without storing it (for hash comparison during first-create).
+ */
+export function createCanonicalProfile(resolved: ResolvedContextOptions | null): CanonicalProfile {
+	return {
+		resolvedOverrides: resolved,
+		hash: contextHash(resolved),
+		establishedAt: Date.now(),
+	};
 }
 
 export function clearCanonicalProfile(userId: unknown): void {
 	const key = normalizeUserId(userId);
 	canonicalProfiles.delete(key);
-	profileEstablishmentLocks.delete(key);
+	const mutex = firstCreateMutexes.get(key);
+	if (mutex) {
+		mutex.resolve(false);
+		firstCreateMutexes.delete(key);
+	}
 }
 
 export function getSessionsForUser(userId: unknown): Array<[string, SessionData]> {
@@ -364,7 +413,8 @@ export function clearAllState(): void {
 	sessions.clear();
 	tabSessionIndex.clear();
 	canonicalProfiles.clear();
-	profileEstablishmentLocks.clear();
+	for (const [, mutex] of firstCreateMutexes) mutex.resolve(false);
+	firstCreateMutexes.clear();
 	clearAllTabLocks();
 	userConcurrency.clear();
 }
@@ -390,7 +440,8 @@ export async function closeAllSessions(): Promise<void> {
 	}
 	launchingSessions.clear();
 	canonicalProfiles.clear();
-	profileEstablishmentLocks.clear();
+	for (const [, mutex] of firstCreateMutexes) mutex.resolve(false);
+	firstCreateMutexes.clear();
 }
 
 let cleanupInterval: NodeJS.Timeout | null = null;

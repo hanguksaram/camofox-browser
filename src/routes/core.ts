@@ -9,12 +9,14 @@ import { log } from '../middleware/logging';
 import { isAuthorizedWithApiKey } from '../middleware/auth';
 import { checkRateLimit } from '../middleware/rate-limit';
 import { loadConfig } from '../utils/config';
-import { contextHash, getAllPresets, resolveContextOptions, validateContextOptions } from '../utils/presets';
+import { getAllPresets, resolveContextOptions, validateContextOptions } from '../utils/presets';
 import { contextPool, getDisplayForUser } from '../services/context-pool';
 import { startVnc, stopVnc } from '../services/vnc';
 import {
 	MAX_TABS_PER_SESSION,
-	establishCanonicalProfile,
+	acquireFirstCreateMutex,
+	commitCanonicalProfile,
+	createCanonicalProfile,
 	findTabById,
 	getCanonicalProfile,
 	getSession,
@@ -23,6 +25,7 @@ import {
 	getTabGroup,
 	indexTab,
 	normalizeUserId,
+	rollbackCanonicalMutex,
 	unindexTab,
 	closeSessionsForUser,
 	countTotalTabsForSessions,
@@ -173,7 +176,15 @@ router.post(
 						message: 'Cannot import cookies without an established canonical profile. Create a tab via POST /tabs first.',
 					});
 				}
-				session = await getSession(userId, canonical.resolvedOverrides);
+				const existingSessions = getSessionsForUser(userId);
+				if (existingSessions.length === 0) {
+					log('warn', 'cookie import rejected: no active session', { userId: String(userId) });
+					return res.status(409).json({
+						error: 'No active session',
+						message: 'Cannot import cookies without an active session. Create a tab via POST /tabs first.',
+					});
+				}
+				session = existingSessions[0][1];
 			}
 			await session.context.addCookies(sanitized as never);
 			const result = { ok: true, userId: String(userId), count: sanitized.length };
@@ -284,6 +295,8 @@ router.post(
 		>,
 		res: Response,
 	) => {
+		let createUserId: string | undefined;
+		let isFirstCreator = false;
 		try {
 			if (CONFIG.apiKey && !isAuthorizedWithApiKey(req, CONFIG.apiKey)) {
 				return res.status(403).json({ error: 'Forbidden' });
@@ -294,6 +307,7 @@ router.post(
 			if (!userId || !resolvedSessionKey) {
 				return res.status(400).json({ error: 'userId and sessionKey required' });
 			}
+			createUserId = String(userId);
 
 			let contextOverrides: ContextOverrides | null = null;
 			try {
@@ -306,30 +320,44 @@ router.post(
 				const validationError = validateContextOptions(contextOverrides);
 				if (validationError) return res.status(400).json({ error: validationError });
 			}
+			if (url) {
+				const urlErr = validateUrl(url);
+				if (urlErr) return res.status(400).json({ error: urlErr });
+			}
 
-			const requestHash = contextHash(contextOverrides);
-			const existingProfile = getCanonicalProfile(userId);
-			if (existingProfile) {
-				if (contextOverrides === null) {
-					contextOverrides = existingProfile.resolvedOverrides;
-				} else if (requestHash !== existingProfile.hash) {
-					log('warn', 'canonical profile conflict', { userId: String(userId) });
-					return res.status(409).json({
-						error: 'Context override conflict',
-						message: 'A canonical profile already exists for this user with different overrides. Close the session first to reconfigure.',
-					});
-				} else {
-					contextOverrides = existingProfile.resolvedOverrides;
+			const requestedProfile = createCanonicalProfile(contextOverrides);
+			const requestHash = requestedProfile.hash;
+
+			const MAX_CANONICAL_RETRIES = 3;
+			for (let attempt = 0; attempt < MAX_CANONICAL_RETRIES; attempt++) {
+				const existingProfile = getCanonicalProfile(userId);
+				if (existingProfile) {
+					if (contextOverrides === null) {
+						contextOverrides = existingProfile.resolvedOverrides;
+					} else if (requestHash !== existingProfile.hash) {
+						log('warn', 'canonical profile conflict', { userId: String(userId) });
+						return res.status(409).json({
+							error: 'Context override conflict',
+							message: 'A canonical profile already exists for this user with different overrides. Close the session first to reconfigure.',
+						});
+					} else {
+						contextOverrides = existingProfile.resolvedOverrides;
+					}
+					break;
 				}
-			} else {
-				const established = await establishCanonicalProfile(userId, contextOverrides);
-				if (established.hash !== requestHash) {
-					log('warn', 'canonical profile conflict (concurrent)', { userId: String(userId) });
-					return res.status(409).json({
-						error: 'Context override conflict',
-						message: 'A canonical profile was established concurrently with different overrides. Close the session first to reconfigure.',
-					});
+
+				const mutex = acquireFirstCreateMutex(userId);
+				if (mutex.acquired) {
+					isFirstCreator = true;
+					break;
 				}
+
+				await mutex.wait;
+			}
+
+			if (!getCanonicalProfile(userId) && !isFirstCreator) {
+				log('error', 'canonical profile acquisition failed after retries', { userId: String(userId) });
+				return res.status(503).json({ error: 'Could not acquire canonical profile, try again' });
 			}
 
 			const sessionMapKey = getSessionMapKey(userId, contextOverrides);
@@ -337,6 +365,9 @@ router.post(
 
 			const totalTabs = countTotalTabsForSessions([[sessionMapKey, session]]);
 			if (totalTabs >= MAX_TABS_PER_SESSION) {
+				if (isFirstCreator && createUserId) {
+					rollbackCanonicalMutex(createUserId);
+				}
 				return res.status(429).json({ error: 'Maximum tabs per session reached' });
 			}
 
@@ -351,10 +382,12 @@ router.post(
 			registerDownloadListener(tabId, String(userId), page);
 
 			if (url) {
-				const urlErr = validateUrl(url);
-				if (urlErr) return res.status(400).json({ error: urlErr });
 				await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 				tabState.visitedUrls.add(url);
+			}
+
+			if (isFirstCreator) {
+				commitCanonicalProfile(userId, contextOverrides);
 			}
 
 			log('info', 'tab created', {
@@ -366,6 +399,9 @@ router.post(
 			});
 			return res.json({ tabId, url: page.url() });
 		} catch (err) {
+			if (isFirstCreator && createUserId) {
+				rollbackCanonicalMutex(createUserId);
+			}
 			const message = err instanceof Error ? err.message : String(err);
 			log('error', 'tab create failed', { reqId: req.reqId, error: message });
 			return res.status(500).json({ error: safeError(err) });
