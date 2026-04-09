@@ -75,6 +75,8 @@ camofox server status
 - Close tab/session: `DELETE /tabs/:tabId`, `DELETE /sessions/:userId`
 - Cookie import/export: `POST /sessions/:userId/cookies`, `GET /tabs/:tabId/cookies`
 
+Protected endpoints require `Authorization: Bearer $CAMOFOX_API_KEY` only when `CAMOFOX_API_KEY` is set; `POST /stop` always requires `x-admin-key` via `CAMOFOX_ADMIN_KEY`.
+
 Most core success responses are structured as JSON, commonly including `ok: true` on action-style endpoints.
 
 ## Stack

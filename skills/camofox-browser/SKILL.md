@@ -363,7 +363,7 @@ export PROXY_PASSWORD='proxy-pass'
 ```
 
 Behavior notes:
-- Cookie import/export and evaluate endpoints enforce bearer auth only when `CAMOFOX_API_KEY` is configured.
+- Protected core and OpenClaw action/debug endpoints enforce bearer auth only when `CAMOFOX_API_KEY` is configured (includes cookie import/export, evaluate, tab/session lifecycle, navigation, interaction, downloads, tracing, console, and errors).
 - OpenClaw `/stop` requires admin key authorization.
 - `camofox download` is currently a stub/placeholder in CLI (documented intentionally).
 

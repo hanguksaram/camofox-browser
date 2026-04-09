@@ -707,12 +707,6 @@ export default function register(api: PluginApi) {
         domainSuffix,
       });
 
-      if (!envCfg.apiKey) {
-        throw new Error(
-          "CAMOFOX_API_KEY is not set. Cookie import is disabled unless you set CAMOFOX_API_KEY for both the server and the OpenClaw plugin environment."
-        );
-      }
-
       const result = await fetchApi(baseUrl, `/sessions/${encodeURIComponent(userId)}/cookies`, {
         method: "POST",
         body: JSON.stringify({ cookies: pwCookies }),

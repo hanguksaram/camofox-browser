@@ -53,7 +53,7 @@
 - **Geo Presets** — 8 built-in region presets (locale/timezone/geolocation) + custom presets file
 - **14 Search Macros** — Google, YouTube, Amazon, Reddit (search + subreddit JSON), Wikipedia, Twitter, Yelp, Spotify, Netflix, LinkedIn, Instagram, TikTok, Twitch
 - **Element Refs** — accessibility snapshots annotated with stable `eN` element references for precise interaction
-- **Cookie Persistence** — import Netscape/Playwright-style cookies into a session (optional, gated by API key)
+- **Cookie Persistence** — import Netscape/Playwright-style cookies into a session (bearer auth required only when `CAMOFOX_API_KEY` is set)
 - **OpenClaw Plugin** — OpenClaw-compatible endpoints (`/start`, `/tabs/open`, `/act`, etc.)
 - **TypeScript** — strict mode, typed request shapes, modular Express routes
 - **YouTube Transcript Extraction** — yt-dlp + browser fallback (service-level; no public API route currently exposed)
@@ -93,7 +93,7 @@ Browser profiles, download registries, and CLI session files use versioned sidec
 - **Incompatible or corrupt state**: The server refuses to load incompatible profiles and download registries; the CLI rejects incompatible saved-session files. Both log an actionable error with the specific recovery path.
 - **Recovery**: Delete the affected profile directory, session file, or download registry as indicated in the error message. Clean state is recreated on next use.
 
-There is no automatic migration, silent repair, or downgrade path. This fail-closed behavior is intentional — it prevents silent data corruption at the cost of requiring manual intervention on incompatible upgrades.
+Supported sidecars include limited forward-migration paths (e.g., fingerprint v0 → v1); when no migration path exists for a given version, the server refuses to load the file and logs an actionable recovery message. There is no silent repair or downgrade path — this fail-closed default prevents data corruption at the cost of manual intervention on unsupported version jumps.
 
 ## Quick Start
 
@@ -463,36 +463,37 @@ Note: For any endpoint that targets an existing tab (`/tabs/:tabId/...`), the se
 
 | Method | Endpoint | Description | Required | Auth |
 |--------|----------|-------------|----------|------|
-| POST | `/sessions/:userId/cookies` | Import cookies into a user session (Playwright cookie objects) | Path: `userId`; Body: `{ "cookies": Cookie[] }` | `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/sessions/:userId/cookies` | Import cookies into a user session (Playwright cookie objects) | Path: `userId`; Body: `{ "cookies": Cookie[] }` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | GET | `/health` | Health check (also pre-launches the browser) | None | None |
 | GET | `/presets` | List available geo presets (built-in + custom) | None | None |
-| POST | `/tabs` | Create a new tab (supports `preset` + per-field overrides) | Body: `userId` + (`sessionKey` or `listItemId`) | None |
+| POST | `/tabs` | Create a new tab (supports `preset` + per-field overrides) | Body: `userId` + (`sessionKey` or `listItemId`) | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | GET | `/tabs?userId=...` | List all tabs for a user (OpenClaw-compatible response shape) | Query: `userId` | None |
-| POST | `/tabs/:tabId/navigate` | Navigate to a URL, or expand a search `macro` + `query` | Body: `userId` + (`url` or `macro`) | None |
+| POST | `/tabs/:tabId/navigate` | Navigate to a URL, or expand a search `macro` + `query` | Body: `userId` + (`url` or `macro`) | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | GET | `/tabs/:tabId/snapshot?userId=...` | Accessibility snapshot annotated with `eN` element refs | Query: `userId` | None |
-| POST | `/tabs/:tabId/wait` | Wait for page readiness (DOM + optional network idle) | Body: `userId` | None |
-| POST | `/tabs/:tabId/click` | Click by `ref` (e.g. `e12`) or CSS `selector` | Body: `userId` + (`ref` or `selector`) | None |
-| POST | `/tabs/:tabId/type` | Type into an element by `ref` or CSS `selector` | Body: `userId` + (`ref` or `selector`) + `text` | None |
-| POST | `/tabs/:tabId/press` | Press a key (e.g. `Enter`, `Escape`) | Body: `userId` + `key` | None |
-| POST | `/tabs/:tabId/scroll` | Scroll up/down/left/right by pixels | Body: `userId` | None |
-| POST | `/tabs/:tabId/scroll-element` | Scroll specific element into view | Body: userId, ref/selector | None |
-| POST | `/tabs/:tabId/back` | Go back | Body: `userId` | None |
-| POST | `/tabs/:tabId/forward` | Go forward | Body: `userId` | None |
-| POST | `/tabs/:tabId/refresh` | Refresh | Body: `userId` | None |
+| POST | `/tabs/:tabId/wait` | Wait for page readiness (DOM + optional network idle) | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/click` | Click by `ref` (e.g. `e12`) or CSS `selector` | Body: `userId` + (`ref` or `selector`) | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/type` | Type into an element by `ref` or CSS `selector` | Body: `userId` + (`ref` or `selector`) + `text` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/press` | Press a key (e.g. `Enter`, `Escape`) | Body: `userId` + `key` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/scroll` | Scroll up/down/left/right by pixels | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/scroll-element` | Scroll specific element into view | Body: userId, ref/selector | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/back` | Go back | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/forward` | Go forward | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/refresh` | Refresh | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | GET | `/tabs/:tabId/links?userId=...&limit=50&offset=0` | Extract links (paginated) | Query: `userId` | None |
 | GET | `/tabs/:tabId/screenshot?userId=...&fullPage=true` | Screenshot (PNG bytes) | Query: `userId` | None |
 | GET | `/tabs/:tabId/stats?userId=...` | Tab stats + visited URLs | Query: `userId` | None |
-| DELETE | `/tabs/:tabId` | Close a tab (expects JSON body: `{ "userId": "..." }`) | Body: `userId` | None |
-| DELETE | `/tabs/group/:listItemId` | Close a tab group (expects JSON body: `{ "userId": "..." }`) | Body: `userId` | None |
-| DELETE | `/sessions/:userId` | Close all sessions for a user | Path: `userId` | None |
+| DELETE | `/tabs/:tabId` | Close a tab (expects JSON body: `{ "userId": "..." }`) | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| DELETE | `/tabs/group/:listItemId` | Close a tab group (expects JSON body: `{ "userId": "..." }`) | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| DELETE | `/sessions/:userId` | Close all sessions for a user | Path: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/sessions/:userId/toggle-display` | Toggle display mode (headless/headed/virtual) | Path: `userId`; Body: `{ "headless": true\|false\|"virtual" }` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | GET | `/tabs/:tabId/cookies` | Export tab cookies | Query: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | GET | `/tabs/:tabId/downloads` | List tab downloads | Query: `userId` | None |
 | GET | `/users/:userId/downloads` | List user downloads | Path: `userId` | None |
 | GET | `/downloads/:downloadId` | Download metadata | Query: `userId` | None |
 | GET | `/downloads/:downloadId/content` | Stream download content | Query: `userId` | None |
-| DELETE | `/downloads/:downloadId` | Delete tracked download | Body or Query: `userId` | None |
-| POST | `/tabs/:tabId/extract-resources` | Extract downloadable resources | Body: `userId` | None |
-| POST | `/tabs/:tabId/batch-download` | Batch download resources | Body: `userId` | None |
+| DELETE | `/downloads/:downloadId` | Delete tracked download | Body or Query: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/extract-resources` | Extract downloadable resources | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
+| POST | `/tabs/:tabId/batch-download` | Batch download resources | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | POST | `/tabs/:tabId/resolve-blobs` | Resolve blob URLs to base64 | Body: `userId` + `urls[]` | None |
 | POST | `/tabs/:tabId/trace/start` | Start trace recording | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | POST | `/tabs/:tabId/trace/stop` | Stop and save trace ZIP | Body: `userId` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
@@ -508,6 +509,7 @@ Note: For any endpoint that targets an existing tab (`/tabs/:tabId/...`), the se
 POST /sessions/:userId/toggle-display
 {"headless": "virtual"}
 ```
+**Auth:** Conditional — requires `Authorization: Bearer $CAMOFOX_API_KEY` when `CAMOFOX_API_KEY` is set.
 Switch browser between headless and headed mode. When encountering CAPTCHAs or issues requiring visual interaction, switch to headed mode to show the browser window.
 
 Returns:
@@ -569,12 +571,12 @@ OpenClaw-compatible aliases (used by the OpenClaw plugin).
 | Method | Endpoint | Description | Required | Auth |
 |--------|----------|-------------|----------|------|
 | GET | `/` | Status (alias of `/health`) | None | None |
-| POST | `/tabs/open` | Open tab (OpenClaw request/response shape) | Body: `userId` + `url` | None |
+| POST | `/tabs/open` | Open tab (OpenClaw request/response shape) | Body: `userId` + `url` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | POST | `/start` | Start browser engine | None | None |
 | POST | `/stop` | Stop browser engine | None | `x-admin-key: $CAMOFOX_ADMIN_KEY` |
-| POST | `/navigate` | Navigate (OpenClaw request shape: `targetId` in body) | Body: `userId` + `targetId` + `url` | None |
+| POST | `/navigate` | Navigate (OpenClaw request shape: `targetId` in body) | Body: `userId` + `targetId` + `url` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 | GET | `/snapshot?userId=...&targetId=...` | Snapshot (OpenClaw response shape) | Query: `userId` + `targetId` | None |
-| POST | `/act` | Combined actions (`click`, `type`, `press`, `scroll`, `scrollIntoView`, `hover`, `wait`, `close`) | Body: `userId` + `targetId` + `kind` | None |
+| POST | `/act` | Combined actions (`click`, `type`, `press`, `scroll`, `scrollIntoView`, `hover`, `wait`, `close`) | Body: `userId` + `targetId` + `kind` | Conditional: `Authorization: Bearer $CAMOFOX_API_KEY` |
 
 ## Search Macros
 
@@ -630,7 +632,7 @@ Custom presets: set `CAMOFOX_PRESETS_FILE=/path/to/presets.json` (JSON object; k
 | `PORT` | (optional) | Alternative port env var (common in PaaS) |
 | `NODE_ENV` | `development` | Node environment |
 | `CAMOFOX_ADMIN_KEY` | (empty) | Required for `POST /stop` (sent via `x-admin-key`) |
-| `CAMOFOX_API_KEY` | (empty) | Enables cookie import endpoint; sent via `Authorization: Bearer ...` |
+| `CAMOFOX_API_KEY` | (empty) | When set, conditionally guards protected endpoints (tab creation, navigation, interaction, session management, downloads, tracing, console) via `Authorization: Bearer` header. Unset = no auth enforced. |
 | `CAMOFOX_HEADLESS` | `true` | Display mode: `true` (headless), `false` (headed), `virtual` (Xvfb) |
 | `CAMOFOX_VNC_RESOLUTION` | `1920x1080x24` | Virtual Xvfb display resolution (`WIDTHxHEIGHTxDEPTH`) |
 | `CAMOFOX_VNC_TIMEOUT_MS` | `120000` | Max VNC session duration in ms before auto-stop |

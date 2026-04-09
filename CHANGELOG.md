@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.2.0] - Unreleased
+
+### Upgrade Notes
+- **Local-state sidecar versioning** introduces fail-closed compatibility checks. If local state files are incompatible with the running version, the server will refuse to start the affected session and log an error with the specific path to delete. For sidecar metadata files, only the indicated file needs removal. For profile-level incompatibilities (e.g., Camoufox engine version mismatch), the error may indicate deleting the entire profile directory — follow the error message guidance.
+- **API key guard** is now conditionally applied to core and OpenClaw protected endpoints (tab creation, navigation, interaction, session management, downloads, tracing, console) when `CAMOFOX_API_KEY` is set. The `POST /stop` route requires `CAMOFOX_ADMIN_KEY` unconditionally. Unset deployments are unaffected.
+
+### Added
+- **Conditional API-key guard** (`CAMOFOX_API_KEY`) on core and OpenClaw protected endpoints — tab creation, navigation, interaction, session management, downloads, tracing, console. Guard enforced only when env var is set; unset deployments are unaffected. `POST /stop` uses a separate unconditional `CAMOFOX_ADMIN_KEY` guard
+- **Canonical profile invariants** — staged first-use, rollback-on-failure, cookie race guard
+- **Local-state sidecar versioning** with fail-closed compatibility checks and migration support
+- **Snapshot pagination** with offset-based windowing for large page snapshots
+- **OpenClaw parity** — snapshot, navigate, scroll endpoints aligned with plugin contract
+- **Macro navigate** and scroll parity with initial-download capture
+- **Plugin surface cleanup** — publish/install/plugin artifact contract validation
+
+### Fixed
+- Server env whitelist: added `DISPLAY`, `HANDLER_TIMEOUT_MS`, `MAX_CONCURRENT_PER_USER`
+- Unified CLI port and idle-timeout defaults with canonical config
+- Session lifecycle: staged first-use + rollback, cookie race guard, dist rebuild, tab-cap test
+
+### Changed
+- README, skills, and governance docs synced to shipped behavior
+
+## [2.1.1] - 2026-03-08
+
+### Fixed
+- Unknown element ref now returns HTTP 400 with guidance message instead of ambiguous error
+
+## [2.1.0] - 2026-03-08
+
+### Fixed
+- **Ref system improvements** — strict ref parsing, expanded element roles in snapshot, stale ref detection
+
 ## [2.0.5] - 2026-03-08
 
 ### Fixed

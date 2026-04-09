@@ -194,8 +194,7 @@ Parameters:
 
 Execute behavior:
 - Parses cookies from file via plugin helper
-- Calls `POST /sessions/:userId/cookies` with bearer auth
-- Requires `CAMOFOX_API_KEY` present in plugin/server environment
+- Calls `POST /sessions/:userId/cookies` (attaches bearer auth when `CAMOFOX_API_KEY` is configured)
 
 ## Console & Error Capture
 
@@ -255,7 +254,7 @@ Compatibility boundaries:
 - Tool transport assumes HTTP JSON server responses; endpoint schema drift may affect output shapes.
 
 Security notes:
-- `camofox_import_cookies` requires API key configured and accepted by server.
+- `camofox_import_cookies` sends bearer auth when `CAMOFOX_API_KEY` is configured; the server conditionally enforces the guard.
 - `camofox_close_tab` includes `userId` via query string in plugin implementation.
 
 ---

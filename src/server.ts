@@ -112,7 +112,7 @@ server = app.listen(PORT, () => {
 	}, CONFIG.healthProbeIntervalMs);
 	healthProbeInterval.unref();
 	if (!CONFIG.apiKey) {
-		console.warn('[camofox] ⚠️  CAMOFOX_API_KEY not set — all endpoints are open without authentication.');
+		console.warn('[camofox] ⚠️  CAMOFOX_API_KEY not set — protected endpoints will accept unauthenticated requests.');
 		console.warn('[camofox] Set CAMOFOX_API_KEY for production/network-exposed deployments.');
 	}
 });

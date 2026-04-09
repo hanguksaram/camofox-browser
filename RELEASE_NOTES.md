@@ -10,6 +10,40 @@ CamoFox Browser Server is in **Preview** (Phase 1). See [Preview Status](README.
 
 ---
 
+## Version Provenance (v2.0.5+)
+
+| Version | Commit | npm | GitHub Release | Notes |
+|---------|--------|-----|----------------|-------|
+| v2.2.0 | — | — | — | Next release (unreleased). Includes 11 feature commits since v2.1.1. |
+| v2.1.1 | `8b97952` | Published 2026-03-08 | Published | Patch: ref error handling |
+| v2.1.0 | `ea5af9d` | Published 2026-03-08 | Published | Patch: ref system improvements |
+| v2.0.5 | `e696846` | Published 2026-03-08 | Published | Patch: typing truncation fix |
+
+> **Upgrade guidance for v2.2.0 (when released):** Local-state sidecar versioning is fail-closed — incompatible state causes the affected session to error with the specific path to delete. For sidecar metadata, only the indicated file is removed; for profile-level incompatibilities (e.g., engine version mismatch), the entire profile directory may need deletion. Follow the error message guidance. When `CAMOFOX_API_KEY` is set, core and OpenClaw protected endpoints require `Authorization: Bearer` auth; `POST /stop` requires `CAMOFOX_ADMIN_KEY` unconditionally.
+
+> **Note:** A 2.1.x maintenance lane would only be opened if a user-facing defect in published v2.1.1 requires hotfix maintenance. Current development continues on the 2.2.0 line.
+
+> Earlier versions (v2.0.4 and below) are documented in individual release entries below. Note: v2.0.3 was reserved on npm; its content was published as v2.0.4.
+
+---
+
+### v2.1.1 — Ref Error Handling (2026-03-08)
+
+**Bug Fixes:**
+- Unknown element ref now returns HTTP 400 with a guidance message instead of an ambiguous error
+
+### v2.1.0 — Ref System Improvements (2026-03-08)
+
+**Bug Fixes:**
+- **Ref system** — strict ref parsing, expanded element roles in snapshot, stale ref detection
+
+### v2.0.5 — Typing Truncation Fix (2026-03-08)
+
+**Bug Fixes:**
+- Resolved text input truncation at ~500 characters caused by humanize typing delay + 30s handler timeout
+- `smartFill()` now uses bulk DOM insertion for text >= 400 characters
+- Dynamic typing timeout replaces fixed 30s limit
+
 ### v2.0.3 — CLI Bug Fixes & Cleanup (2026-03-05)
 **npm:** Published as v2.0.4 (v2.0.3 reserved on npm registry)
 
