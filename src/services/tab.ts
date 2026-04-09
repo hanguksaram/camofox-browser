@@ -3,6 +3,7 @@ import type { Locator, Page } from 'playwright-core';
 import { isElementRef as isSelectorElementRef } from '../cli/utils/selector';
 import { expandMacro } from '../utils/macros';
 import { loadConfig } from '../utils/config';
+import { windowSnapshot } from '../utils/snapshot';
 import type {
 	ConsoleEntry,
 	EvaluateResult,
@@ -491,6 +492,33 @@ export async function snapshotTab(tabState: TabState): Promise<{ url: string; sn
 	};
 }
 
+export interface SnapshotPayload {
+	url: string;
+	snapshot: string;
+	refsCount: number;
+	offset: number;
+	truncated: boolean;
+	totalChars: number;
+	hasMore: boolean;
+	nextOffset: number | null;
+}
+
+export function buildSnapshotPayload(
+	raw: { url: string; snapshot: string; refsCount: number },
+	offset: number = 0,
+): SnapshotPayload {
+	const windowed = windowSnapshot(raw.snapshot, offset, CONFIG.maxSnapshotChars, CONFIG.snapshotTailChars);
+	return {
+		url: raw.url,
+		snapshot: windowed.text,
+		refsCount: raw.refsCount,
+		offset: windowed.offset,
+		truncated: windowed.truncated,
+		totalChars: windowed.totalChars,
+		hasMore: windowed.hasMore ?? false,
+		nextOffset: windowed.nextOffset ?? null,
+	};
+}
 
 export async function clickTab(tabId: string, tabState: TabState, params: { ref?: string; selector?: string }): Promise<{ ok: true; url: string }>{
 	const { ref, selector } = params;

@@ -35,6 +35,7 @@ import {
 } from '../services/session';
 import {
 	backTab,
+	buildSnapshotPayload,
 	buildRefs,
 	clickTab,
 	createTabState,
@@ -529,7 +530,7 @@ router.post('/tabs/:tabId/navigate', async (req: Request<{ tabId: string }, unkn
 });
 
 // Snapshot
-router.get('/tabs/:tabId/snapshot', async (req: Request<{ tabId: string }, unknown, unknown, { userId?: unknown }>, res: Response) => {
+router.get('/tabs/:tabId/snapshot', async (req: Request<{ tabId: string }, unknown, unknown, { userId?: unknown; offset?: string }>, res: Response) => {
 	try {
 		const userId = req.query.userId;
 		if (!userId) return res.status(400).json({ error: 'userId required' });
@@ -539,14 +540,19 @@ router.get('/tabs/:tabId/snapshot', async (req: Request<{ tabId: string }, unkno
 
 		const { tabState } = found;
 		tabState.toolCalls++;
-		const result = await withUserLimit(String(userId), CONFIG.maxConcurrentPerUser, () =>
+
+		const rawOffset = Number(req.query.offset);
+		const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0;
+
+		const raw = await withUserLimit(String(userId), CONFIG.maxConcurrentPerUser, () =>
 			withTimeout(snapshotTab(tabState), CONFIG.handlerTimeoutMs, 'snapshot'),
 		);
+		const result = buildSnapshotPayload(raw, offset);
 		log('info', 'snapshot', {
 			reqId: req.reqId,
 			tabId,
 			url: result.url,
-			snapshotLen: (result.snapshot as string | undefined)?.length,
+			snapshotLen: result.snapshot.length,
 			refsCount: result.refsCount,
 		});
 		return res.json(result);

@@ -32,6 +32,22 @@ function createTestApp() {
     `);
   });
 
+  app.get('/long-snapshot', (req, res) => {
+    const sections = Array.from({ length: 500 }, (_, index) => (
+      `<p>Section ${index + 1}: ${'Long snapshot content for pagination coverage. '.repeat(6)}</p>`
+    )).join('');
+
+    res.send(`
+      <!DOCTYPE html>
+      <html><head><title>Long Snapshot</title></head>
+      <body>
+        <h1>Long Snapshot Page</h1>
+        ${sections}
+        <a href="/pageA">Return to Page A</a>
+      </body></html>
+    `);
+  });
+
   app.get('/slow', (req, res) => {
     const parsedDelay = Number.parseInt(String(req.query.delay || '1000'), 10);
     const delay = Number.isFinite(parsedDelay) && parsedDelay >= 0 ? parsedDelay : 1000;

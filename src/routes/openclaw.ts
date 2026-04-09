@@ -26,6 +26,7 @@ import {
 	withUserLimit,
 } from '../services/session';
 import {
+	buildSnapshotPayload,
 	buildRefs,
 	createTabState,
 	refToLocator,
@@ -220,7 +221,7 @@ router.post('/navigate', async (req: Request<unknown, unknown, { targetId?: stri
 });
 
 // GET /snapshot - Snapshot (OpenClaw format with query params)
-router.get('/snapshot', async (req: Request<unknown, unknown, unknown, { targetId?: string; userId?: unknown; format?: string }>, res: Response) => {
+router.get('/snapshot', async (req: Request<unknown, unknown, unknown, { targetId?: string; userId?: unknown; format?: string; offset?: string }>, res: Response) => {
 	try {
 		const { targetId, userId } = req.query;
 		if (!userId) {
@@ -235,15 +236,19 @@ router.get('/snapshot', async (req: Request<unknown, unknown, unknown, { targetI
 		const { tabState } = found;
 		tabState.toolCalls++;
 
-		const result = await withTimeout(snapshotTab(tabState), CONFIG.handlerTimeoutMs, 'openclaw-snapshot');
+		const rawOffset = Number(req.query.offset);
+		const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0;
+
+		const raw = await withUserLimit(String(userId), CONFIG.maxConcurrentPerUser, () =>
+			withTimeout(snapshotTab(tabState), CONFIG.handlerTimeoutMs, 'openclaw-snapshot'),
+		);
+		const payload = buildSnapshotPayload(raw, offset);
 
 		return res.json({
 			ok: true,
 			format: 'aria',
 			targetId,
-			url: result.url,
-			snapshot: result.snapshot,
-			refsCount: result.refsCount,
+			...payload,
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
