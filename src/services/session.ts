@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { BrowserContextOptions } from 'playwright-core';
 
 import type { ContextOverrides, SessionData, TabState } from '../types';
@@ -6,7 +7,7 @@ import { clearTabLock, clearAllTabLocks } from './tab';
 import { loadConfig } from '../utils/config';
 import type { ResolvedContextOptions } from '../utils/presets';
 import { contextHash } from '../utils/presets';
-import { contextPool } from './context-pool';
+import { contextPool, type PoolEntry } from './context-pool';
 import { cleanupUserDownloads } from './download';
 import { decrementActiveOps, incrementActiveOps } from './health';
 import { stopVnc } from './vnc';
@@ -338,12 +339,8 @@ export function findTabById(
 	return null;
 }
 
-export async function getSession(userId: unknown, contextOverrides?: ContextOverrides | null): Promise<SessionData> {
-	const key = getSessionMapKey(userId, contextOverrides);
-	let session = sessions.get(key);
-
+function buildBrowserContextOptions(contextOverrides?: ContextOverrides | null): BrowserContextOptions {
 	const resolved = contextOverrides || {};
-
 	const contextOptions: BrowserContextOptions = {
 		viewport: resolved.viewport || { width: 1280, height: 720 },
 		permissions: ['geolocation'],
@@ -351,7 +348,9 @@ export async function getSession(userId: unknown, contextOverrides?: ContextOver
 
 	const hasOverrides = !!(
 		contextOverrides &&
-		(contextOverrides.locale !== undefined || contextOverrides.timezoneId !== undefined || contextOverrides.geolocation !== undefined)
+		(contextOverrides.locale !== undefined ||
+			contextOverrides.timezoneId !== undefined ||
+			contextOverrides.geolocation !== undefined)
 	);
 
 	// With proxy+geoip, camoufox auto-configures locale/timezone/geo from proxy IP.
@@ -362,6 +361,90 @@ export async function getSession(userId: unknown, contextOverrides?: ContextOver
 		contextOptions.geolocation = resolved.geolocation || { latitude: 37.7749, longitude: -122.4194 };
 	}
 
+	return contextOptions;
+}
+
+export interface StagedFirstUse {
+	session: SessionData;
+	contextEntry: PoolEntry;
+	generation: string;
+}
+
+export async function createStagedSession(
+	userId: unknown,
+	contextOverrides?: ContextOverrides | null,
+): Promise<StagedFirstUse> {
+	const key = normalizeUserId(userId);
+
+	if (contextPool.size() >= MAX_SESSIONS) {
+		throw new Error('Maximum concurrent sessions reached');
+	}
+
+	const generation = crypto.randomUUID();
+	const contextOptions = buildBrowserContextOptions(contextOverrides);
+	const entry = await contextPool.ensureContext(key, contextOptions, true, generation);
+
+	const session: SessionData = {
+		context: entry.context,
+		tabGroups: new Map(),
+		lastAccess: Date.now(),
+	};
+
+	return { session, contextEntry: entry, generation };
+}
+
+export function commitStagedFirstUse(
+	userId: unknown,
+	session: SessionData,
+	contextOverrides: ContextOverrides | null,
+	tabInfo: {
+		tabId: string;
+		sessionMapKey: string;
+		sessionKey: string;
+		tabState: TabState;
+	},
+	generation: string,
+): boolean {
+	const key = normalizeUserId(userId);
+	const entry = contextPool.getEntry(key);
+	if (!entry || entry.stagedGeneration !== generation) return false;
+
+	if (!firstCreateMutexes.has(key) || canonicalProfiles.has(key)) {
+		return false;
+	}
+
+	session.lastAccess = Date.now();
+	const group = getTabGroup(session, tabInfo.sessionKey);
+	group.set(tabInfo.tabId, tabInfo.tabState);
+	sessions.set(key, session);
+
+	entry.staged = false;
+	entry.stagedGeneration = undefined;
+
+	indexTab(tabInfo.tabId, tabInfo.sessionMapKey);
+	commitCanonicalProfile(userId, contextOverrides);
+
+	return true;
+}
+
+export async function rollbackStagedFirstUse(userId: unknown, generation: string): Promise<void> {
+	const key = normalizeUserId(userId);
+	const entry = contextPool.getEntry(key);
+	if (!(entry?.staged === true && entry.stagedGeneration === generation)) return;
+	try {
+		cleanupUserDownloads(key);
+	} catch {
+		// ignore cleanup errors
+	}
+	await contextPool.closeStagedContext(key, generation);
+	rollbackCanonicalMutex(userId);
+}
+
+export async function getSession(userId: unknown, contextOverrides?: ContextOverrides | null): Promise<SessionData> {
+	const key = getSessionMapKey(userId, contextOverrides);
+	let session = sessions.get(key);
+	const contextOptions = buildBrowserContextOptions(contextOverrides);
+
 	if (!session) {
 		const existingLaunch = launchingSessions.get(key);
 		if (existingLaunch) {
@@ -370,7 +453,7 @@ export async function getSession(userId: unknown, contextOverrides?: ContextOver
 			return session;
 		}
 
-		if (sessions.size + launchingSessions.size >= MAX_SESSIONS) {
+		if (contextPool.size() >= MAX_SESSIONS) {
 			throw new Error('Maximum concurrent sessions reached');
 		}
 
@@ -421,6 +504,7 @@ export function clearAllState(): void {
 
 export async function closeSessionsForUser(userId: string): Promise<void> {
 	const key = normalizeUserId(userId);
+	await contextPool.closeStagedContext(key).catch(() => {});
 	await contextPool.closeContext(key).catch(() => {});
 	cleanupSessionsForUserId(key, 'explicit_close');
 }

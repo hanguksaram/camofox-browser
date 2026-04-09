@@ -15,6 +15,9 @@ const CONFIG = loadConfig();
 // In-memory registry of downloads (persisted to disk)
 const downloads = new Map<string, DownloadInfo>();
 
+// Tab IDs with staged (uncommitted) downloads - hidden from external queries.
+const stagedTabIds = new Set<string>();
+
 const REGISTRY_FILE = path.join(CONFIG.downloadsDir, 'registry.json');
 
 let saveTimer: NodeJS.Timeout | null = null;
@@ -23,6 +26,14 @@ let registryInitialized = false;
 let cleanupInterval: NodeJS.Timeout | null = null;
 
 const pagesWithListener = new WeakSet<Page>();
+
+export function markDownloadsStaged(tabId: string): void {
+	stagedTabIds.add(String(tabId));
+}
+
+export function commitStagedDownloads(tabId: string): void {
+	stagedTabIds.delete(String(tabId));
+}
 
 export function buildContentUrl(id: string, userId: string): string {
 	return `/downloads/${String(id)}/content?userId=${encodeURIComponent(String(userId))}`;
@@ -418,6 +429,7 @@ function deleteDownloadEntry(id: string, info: DownloadInfo): void {
 }
 
 function matchFilters(info: DownloadInfo, filters: DownloadListFilters): boolean {
+	if (stagedTabIds.has(String(info.tabId))) return false;
 	if (String(info.userId) !== String(filters.userId)) return false;
 	if (filters.tabId && String(info.tabId) !== String(filters.tabId)) return false;
 	if (filters.status && String(info.status) !== String(filters.status)) return false;
@@ -475,6 +487,7 @@ export function getDownload(id: string, userId: string): DownloadInfo | null {
 	const info = downloads.get(String(id));
 	if (!info) return null;
 	if (String(info.userId) !== String(userId)) return null;
+	if (stagedTabIds.has(String(info.tabId))) return null;
 	return info;
 }
 
@@ -509,7 +522,9 @@ export function deleteDownload(id: string, userId: string): boolean {
 
 export function getRecentDownloads(tabId: string, windowMs: number): DownloadInfo[] {
 	const now = Date.now();
-	return Array.from(downloads.values()).filter((d) => d.tabId === String(tabId) && now - d.createdAt <= windowMs);
+	return Array.from(downloads.values()).filter(
+		(d) => d.tabId === String(tabId) && now - d.createdAt <= windowMs && !stagedTabIds.has(String(d.tabId)),
+	);
 }
 
 export function cleanupExpiredDownloads(ttlMs: number): number {
@@ -538,6 +553,7 @@ export function cleanupUserDownloads(userId: string): number {
 	let removed = 0;
 	for (const [id, info] of downloads) {
 		if (String(info.userId) !== uid) continue;
+		stagedTabIds.delete(String(info.tabId));
 		const filePath = path.join(safeUserDir(CONFIG.downloadsDir, uid), info.savedFilename);
 		try {
 			fs.unlinkSync(filePath);

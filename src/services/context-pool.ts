@@ -28,6 +28,8 @@ export interface PoolEntry {
 	profileDir: string;
 	lastAccess: number;
 	launching?: Promise<BrowserContext>;
+	staged?: boolean;
+	stagedGeneration?: string;
 	virtualDisplay?: any;
 	seedOptions?: Pick<BrowserContextOptions, 'locale' | 'timezoneId' | 'geolocation' | 'viewport'>;
 }
@@ -190,7 +192,9 @@ export class ContextPool {
 	}
 
 	listActiveUserIds(): string[] {
-		return Array.from(this.pool.keys());
+		return Array.from(this.pool.entries())
+			.filter(([, entry]) => !entry.staged)
+			.map(([userId]) => userId);
 	}
 
 	private cleanupVirtualDisplay(entry: PoolEntry): void {
@@ -379,7 +383,7 @@ export class ContextPool {
 
 		let lru: PoolEntry | null = null;
 		for (const entry of this.pool.values()) {
-			if (entry.launching) continue;
+			if (entry.launching || entry.staged) continue;
 			if (!lru || entry.lastAccess < lru.lastAccess) lru = entry;
 		}
 		if (!lru) return;
@@ -389,12 +393,21 @@ export class ContextPool {
 		await this.closeContext(lru.userId);
 	}
 
-	async ensureContext(userId: string, options?: BrowserContextOptions): Promise<PoolEntry> {
+	async ensureContext(
+		userId: string,
+		options?: BrowserContextOptions,
+		staged = false,
+		stagedGeneration?: string,
+	): Promise<PoolEntry> {
 		const normalized = String(userId);
 		let entry = this.pool.get(normalized);
 		const seed = pickSeedOptions(options);
 
 		if (entry) {
+			if (staged) {
+				entry.staged = true;
+				entry.stagedGeneration = stagedGeneration;
+			}
 			entry.lastAccess = Date.now();
 			if (entry.launching) {
 				entry.context = await entry.launching;
@@ -430,6 +443,8 @@ export class ContextPool {
 			userId: normalized,
 			profileDir,
 			lastAccess: Date.now(),
+			staged,
+			stagedGeneration,
 			seedOptions: seed,
 		};
 
@@ -463,7 +478,7 @@ export class ContextPool {
 	async closeContext(userId: string): Promise<void> {
 		const normalized = String(userId);
 		const entry = this.pool.get(normalized);
-		if (!entry) return;
+		if (!entry || entry.staged) return;
 
 		try {
 			if (entry.launching) {
@@ -478,9 +493,24 @@ export class ContextPool {
 		}
 	}
 
+	async closeStagedContext(userId: string, generation?: string): Promise<void> {
+		const normalized = String(userId);
+		const entry = this.pool.get(normalized);
+		if (!entry?.staged) return;
+		if (generation && entry.stagedGeneration !== generation) return;
+		entry.staged = false;
+		entry.stagedGeneration = undefined;
+		await this.closeContext(normalized);
+	}
+
 	async closeAll(): Promise<void> {
 		const userIds = Array.from(this.pool.keys());
 		for (const userId of userIds) {
+			const entry = this.pool.get(userId);
+			if (entry?.staged) {
+				entry.staged = false;
+				entry.stagedGeneration = undefined;
+			}
 			await this.closeContext(userId);
 		}
 	}

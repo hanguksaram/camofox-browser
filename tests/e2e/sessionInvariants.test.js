@@ -28,6 +28,37 @@ async function postJson(serverUrl, path, body) {
   return { res, data };
 }
 
+async function getJson(serverUrl, path) {
+  const res = await fetch(`${serverUrl}${path}`, {
+    headers: process.env.CAMOFOX_API_KEY ? { Authorization: `Bearer ${process.env.CAMOFOX_API_KEY}` } : undefined,
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+
+  return { res, data };
+}
+
+async function waitForPoolSize(serverUrl, expectedPoolSize, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+
+  while (Date.now() < deadline) {
+    const response = await getJson(serverUrl, '/health');
+    last = response.data;
+    if (response.res.status === 200 && response.data?.poolSize === expectedPoolSize) {
+      return response.data;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error(`Timed out waiting for poolSize=${expectedPoolSize}. Last health payload: ${JSON.stringify(last)}`);
+}
+
 async function deleteSession(serverUrl, userId) {
   const res = await fetch(`${serverUrl}/sessions/${encodeURIComponent(userId)}`, {
     method: 'DELETE',
@@ -200,8 +231,10 @@ describe('Session invariants', () => {
     expect(cookie.data.error).toBe('No canonical profile');
   });
 
-  test('runtime failure during first tab create rolls back canonical profile', async () => {
+  test('runtime failure during first tab create rolls back canonical profile without leaking staged state', async () => {
     const userId = trackUser('rollback');
+    const beforeHealth = await getJson(serverUrl, '/health');
+    expect(beforeHealth.res.status).toBe(200);
 
     // Use a URL that passes validation (http scheme) but fails at navigation
     const failed = await postJson(serverUrl, '/tabs', {
@@ -211,6 +244,15 @@ describe('Session invariants', () => {
       preset: 'us-east',
     });
     expect(failed.res.status).toBe(500);
+
+    const afterHealth = await getJson(serverUrl, '/health');
+    expect(afterHealth.res.status).toBe(200);
+    expect(afterHealth.data.poolSize).toBe(beforeHealth.data.poolSize);
+    expect(afterHealth.data.activeUserIds).not.toContain(userId);
+
+    const listedTabs = await getJson(serverUrl, `/tabs?userId=${encodeURIComponent(userId)}`);
+    expect(listedTabs.res.status).toBe(200);
+    expect(listedTabs.data.tabs).toEqual([]);
 
     // Canonical must have been rolled back
     const openclaw = await postJson(serverUrl, '/tabs/open', {
@@ -227,7 +269,42 @@ describe('Session invariants', () => {
     expect(cookie.data.error).toBe('No canonical profile');
   }, 30000);
 
-  test('concurrent first-create: failing request does not corrupt canonical state', async () => {
+  test('pre-generation failure releases mutex so next create succeeds', async () => {
+    const blockingUser = trackUser('blocker');
+    const testUser = trackUser('pre-gen-fail');
+
+    const blocker = await postJson(serverUrl, '/tabs', {
+      userId: blockingUser,
+      sessionKey: 'block',
+      url: `${testSiteUrl}/pageA`,
+    });
+    expect(blocker.res.status).toBe(200);
+
+    const fail = await postJson(serverUrl, '/tabs', {
+      userId: testUser,
+      sessionKey: 'attempt1',
+      url: `${testSiteUrl}/pageA`,
+    });
+    expect(fail.res.status).toBe(500);
+
+    const deleted = await deleteSession(serverUrl, blockingUser);
+    expect(deleted.res.status).toBe(200);
+    await waitForPoolSize(serverUrl, 0);
+
+    const retry = await postJson(serverUrl, '/tabs', {
+      userId: testUser,
+      sessionKey: 'attempt2',
+      url: `${testSiteUrl}/pageA`,
+      preset: 'us-east',
+    });
+    expect(retry.res.status).toBe(200);
+    expect(retry.data.tabId).toBeDefined();
+
+    const snap = await getJson(serverUrl, `/tabs/${retry.data.tabId}/snapshot?userId=${encodeURIComponent(testUser)}`);
+    expect(snap.res.status).toBe(200);
+  }, 30000);
+
+  test('concurrent first-create: failed staged request cannot leak a mismatched context into the committed canonical session', async () => {
     const userId = trackUser('concurrent');
 
     const responseA = postJson(serverUrl, '/tabs', {
@@ -242,13 +319,12 @@ describe('Session invariants', () => {
       userId,
       sessionKey: 'b',
       url: `${testSiteUrl}/pageA`,
-      preset: 'us-east',
+      preset: 'germany',
     });
 
     const [a, b] = await Promise.all([responseA, responseB]);
 
-    expect(a.res.status).toBeGreaterThanOrEqual(400);
-
+    expect(a.res.status).toBe(500);
     expect(b.res.status).toBe(200);
     expect(b.data.tabId).toBeDefined();
 
@@ -259,7 +335,219 @@ describe('Session invariants', () => {
     });
     expect(reuse.res.status).toBe(200);
     expect(reuse.data.tabId).toBeDefined();
+
+    const conflict = await postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'conflict',
+      url: `${testSiteUrl}/pageA`,
+      preset: 'us-east',
+    });
+    expect(conflict.res.status).toBe(409);
+    expect(conflict.data.error).toBe('Context override conflict');
+
+    const evaluated = await postJson(serverUrl, `/tabs/${b.data.tabId}/evaluate`, {
+      userId,
+      expression: '({ language: navigator.language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })',
+    });
+    expect(evaluated.res.status).toBe(200);
+    expect(evaluated.data.ok).toBe(true);
+    expect(evaluated.data.result.language).toBe('de-DE');
+    expect(evaluated.data.result.timezone).toBe('Europe/Berlin');
   }, 60000);
+
+  test('explicit DELETE during staged first-use disposes context', async () => {
+    const userId = trackUser('staged-delete');
+
+    const stagedCreate = postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'slow',
+      url: `${testSiteUrl}/slow?delay=5000`,
+      preset: 'us-east',
+    });
+
+    const stagedHealth = await waitForPoolSize(serverUrl, 1, 10000);
+    expect(stagedHealth.activeUserIds).not.toContain(userId);
+
+    const closed = await deleteSession(serverUrl, userId);
+    expect(closed.res.status).toBe(200);
+
+    const stagedResult = await stagedCreate;
+    expect([409, 500]).toContain(stagedResult.res.status);
+
+    const afterHealth = await waitForPoolSize(serverUrl, 0, 10000);
+    expect(afterHealth.activeUserIds).toEqual([]);
+
+    const openclaw = await postJson(serverUrl, '/tabs/open', {
+      userId,
+      url: `${testSiteUrl}/pageA`,
+    });
+    expect(openclaw.res.status).toBe(409);
+    expect(openclaw.data.error).toBe('No canonical profile');
+  }, 30000);
+
+  test('stale creator from deleted generation cannot commit or rollback replacement generation', async () => {
+    const userId = trackUser('aba-race');
+
+    const createA = postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'gen-a',
+      url: `${testSiteUrl}/slow?delay=5000`,
+      preset: 'us-east',
+    });
+
+    await waitForPoolSize(serverUrl, 1, 10000);
+
+    const closed = await deleteSession(serverUrl, userId);
+    expect(closed.res.status).toBe(200);
+
+    const resultA = await createA;
+    expect([409, 500]).toContain(resultA.res.status);
+
+    const createB = await postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'gen-b',
+      url: `${testSiteUrl}/pageA`,
+      preset: 'germany',
+    });
+    expect(createB.res.status).toBe(200);
+    expect(createB.data.tabId).toBeDefined();
+
+    const tabId = createB.data.tabId;
+    const evaluated = await postJson(serverUrl, `/tabs/${tabId}/evaluate`, {
+      userId,
+      expression: '({ lang: navigator.language, tz: Intl.DateTimeFormat().resolvedOptions().timeZone })',
+    });
+    expect(evaluated.res.status).toBe(200);
+    expect(evaluated.data.result.lang).toBe('de-DE');
+    expect(evaluated.data.result.tz).toBe('Europe/Berlin');
+
+    const health = await getJson(serverUrl, '/health');
+    expect(health.data.activeUserIds).toContain(userId);
+  }, 30000);
+
+  test('stale rollback after replacement commits cannot corrupt replacement state', async () => {
+    const userId = trackUser('aba-overlap');
+
+    const createA = postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'gen-a',
+      url: `${testSiteUrl}/slow?delay=10000`,
+      preset: 'us-east',
+    });
+
+    await waitForPoolSize(serverUrl, 1, 10000);
+
+    const closed = await deleteSession(serverUrl, userId);
+    expect(closed.res.status).toBe(200);
+
+    const resultB = await postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'gen-b',
+      url: `${testSiteUrl}/pageA`,
+      preset: 'germany',
+    });
+    expect(resultB.res.status).toBe(200);
+    expect(resultB.data.tabId).toBeDefined();
+    const tabIdB = resultB.data.tabId;
+
+    const resultA = await createA;
+    expect([409, 500]).toContain(resultA.res.status);
+
+    const snap = await getJson(serverUrl, `/tabs/${tabIdB}/snapshot?userId=${encodeURIComponent(userId)}`);
+    expect(snap.res.status).toBe(200);
+
+    const evaluated = await postJson(serverUrl, `/tabs/${tabIdB}/evaluate`, {
+      userId,
+      expression: '({ lang: navigator.language, tz: Intl.DateTimeFormat().resolvedOptions().timeZone })',
+    });
+    expect(evaluated.res.status).toBe(200);
+    expect(evaluated.data.ok).toBe(true);
+    expect(evaluated.data.result.lang).toBe('de-DE');
+    expect(evaluated.data.result.tz).toBe('Europe/Berlin');
+
+    const health = await getJson(serverUrl, '/health');
+    expect(health.res.status).toBe(200);
+    expect(health.data.activeUserIds).toContain(userId);
+  }, 60000);
+
+  test('staged downloads stay hidden from user download listings', async () => {
+    const userId = trackUser('staged-downloads');
+
+    const stagedCreate = postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'slow',
+      url: `${testSiteUrl}/slow?delay=5000`,
+      preset: 'us-east',
+    });
+
+    const stagedHealth = await waitForPoolSize(serverUrl, 1, 10000);
+    expect(stagedHealth.activeUserIds).not.toContain(userId);
+
+    const duringDownloads = await getJson(serverUrl, `/users/${encodeURIComponent(userId)}/downloads`);
+    expect(duringDownloads.res.status).toBe(200);
+    expect(duringDownloads.data.downloads).toEqual([]);
+
+    const closed = await deleteSession(serverUrl, userId);
+    expect(closed.res.status).toBe(200);
+
+    const stagedResult = await stagedCreate;
+    expect([409, 500]).toContain(stagedResult.res.status);
+
+    const afterDownloads = await getJson(serverUrl, `/users/${encodeURIComponent(userId)}/downloads`);
+    expect(afterDownloads.res.status).toBe(200);
+    expect(afterDownloads.data.downloads).toEqual([]);
+  }, 30000);
+
+  test('staged user stays hidden from /health activeUserIds until commit', async () => {
+    const userId = trackUser('staged-health');
+
+    const stagedCreate = postJson(serverUrl, '/tabs', {
+      userId,
+      sessionKey: 'slow',
+      url: `${testSiteUrl}/slow?delay=2000`,
+      preset: 'us-east',
+    });
+
+    const stagedHealth = await waitForPoolSize(serverUrl, 1, 10000);
+    expect(stagedHealth.activeUserIds).not.toContain(userId);
+
+    const stagedResult = await stagedCreate;
+    expect(stagedResult.res.status).toBe(200);
+    expect(stagedResult.data.tabId).toBeDefined();
+
+    const committedHealth = await getJson(serverUrl, '/health');
+    expect(committedHealth.res.status).toBe(200);
+    expect(committedHealth.data.poolSize).toBe(1);
+    expect(committedHealth.data.activeUserIds).toContain(userId);
+  }, 30000);
+
+  test('staged first-create counts toward session capacity before commit while staying hidden from activeUserIds', async () => {
+    const stagedUserId = trackUser('staged-capacity-a');
+    const blockedUserId = trackUser('staged-capacity-b');
+
+    const stagedCreate = postJson(serverUrl, '/tabs', {
+      userId: stagedUserId,
+      sessionKey: 'slow',
+      url: `${testSiteUrl}/slow?delay=2000`,
+      preset: 'us-east',
+    });
+
+    const stagedHealth = await waitForPoolSize(serverUrl, 1, 10000);
+    expect(stagedHealth.activeUserIds).not.toContain(stagedUserId);
+
+    const blocked = await postJson(serverUrl, '/tabs', {
+      userId: blockedUserId,
+      sessionKey: 'blocked',
+      url: `${testSiteUrl}/pageA`,
+      preset: 'germany',
+    });
+    expect(blocked.res.status).toBe(500);
+    expect(blocked.data.error).toMatch(/maximum concurrent sessions reached/i);
+
+    const stagedResult = await stagedCreate;
+    expect(stagedResult.res.status).toBe(200);
+    expect(stagedResult.data.tabId).toBeDefined();
+  }, 30000);
 
   test('enforces per-user tab cap under canonical profile contract', async () => {
     const userId = trackUser('tab-cap');

@@ -31,6 +31,21 @@ function createTestApp() {
       </body></html>
     `);
   });
+
+  app.get('/slow', (req, res) => {
+    const parsedDelay = Number.parseInt(String(req.query.delay || '1000'), 10);
+    const delay = Number.isFinite(parsedDelay) && parsedDelay >= 0 ? parsedDelay : 1000;
+    setTimeout(() => {
+      res.send(`
+        <!DOCTYPE html>
+        <html><head><title>Slow Page</title></head>
+        <body>
+          <h1>Slow Page</h1>
+          <p id="delay">Delay: ${delay}</p>
+        </body></html>
+      `);
+    }, delay);
+  });
   
   // Page with multiple links for links extraction test
   app.get('/links', (req, res) => {

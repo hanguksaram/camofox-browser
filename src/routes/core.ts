@@ -15,8 +15,9 @@ import { startVnc, stopVnc } from '../services/vnc';
 import {
 	MAX_TABS_PER_SESSION,
 	acquireFirstCreateMutex,
-	commitCanonicalProfile,
+	commitStagedFirstUse,
 	createCanonicalProfile,
+	createStagedSession,
 	findTabById,
 	getCanonicalProfile,
 	getSession,
@@ -26,6 +27,7 @@ import {
 	indexTab,
 	normalizeUserId,
 	rollbackCanonicalMutex,
+	rollbackStagedFirstUse,
 	unindexTab,
 	closeSessionsForUser,
 	countTotalTabsForSessions,
@@ -55,6 +57,7 @@ import {
 } from '../services/tab';
 
 import {
+	commitStagedDownloads,
 	registerDownloadListener,
 	listDownloads,
 	getDownload,
@@ -62,6 +65,7 @@ import {
 	deleteDownload,
 	getRecentDownloads,
 	cleanupUserDownloads,
+	markDownloadsStaged,
 } from '../services/download';
 import { extractResources, resolveBlob } from '../services/resource-extractor';
 import { batchDownload } from '../services/batch-downloader';
@@ -297,6 +301,7 @@ router.post(
 	) => {
 		let createUserId: string | undefined;
 		let isFirstCreator = false;
+		let stagedGeneration: string | undefined;
 		try {
 			if (CONFIG.apiKey && !isAuthorizedWithApiKey(req, CONFIG.apiKey)) {
 				return res.status(403).json({ error: 'Forbidden' });
@@ -361,33 +366,62 @@ router.post(
 			}
 
 			const sessionMapKey = getSessionMapKey(userId, contextOverrides);
-			const session = await getSession(userId, contextOverrides);
-
-			const totalTabs = countTotalTabsForSessions([[sessionMapKey, session]]);
-			if (totalTabs >= MAX_TABS_PER_SESSION) {
-				if (isFirstCreator && createUserId) {
-					rollbackCanonicalMutex(createUserId);
-				}
-				return res.status(429).json({ error: 'Maximum tabs per session reached' });
-			}
-
-			const group = getTabGroup(session, resolvedSessionKey);
-			const page = await session.context.newPage();
-			const tabId = crypto.randomUUID();
-			(page as unknown as { __camofox_tabId?: string }).__camofox_tabId = tabId;
-			const tabState = createTabState(page);
-			group.set(tabId, tabState);
-			indexTab(tabId, sessionMapKey);
-
-			registerDownloadListener(tabId, String(userId), page);
-
-			if (url) {
-				await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-				tabState.visitedUrls.add(url);
-			}
+			let tabId: string;
+			let pageUrl: string;
 
 			if (isFirstCreator) {
-				commitCanonicalProfile(userId, contextOverrides);
+				const staged = await createStagedSession(userId, contextOverrides);
+				stagedGeneration = staged.generation;
+				const { session, generation } = staged;
+				const page = await session.context.newPage();
+				tabId = crypto.randomUUID();
+				(page as unknown as { __camofox_tabId?: string }).__camofox_tabId = tabId;
+				const tabState = createTabState(page);
+
+				registerDownloadListener(tabId, String(userId), page);
+				markDownloadsStaged(tabId);
+
+				if (url) {
+					await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+					tabState.visitedUrls.add(url);
+				}
+
+				const committed = commitStagedFirstUse(userId, session, contextOverrides, {
+					tabId,
+					sessionMapKey,
+					sessionKey: resolvedSessionKey,
+					tabState,
+				}, generation);
+				if (!committed) {
+					await rollbackStagedFirstUse(createUserId ?? userId, generation).catch(() => {});
+					return res.status(409).json({ error: 'Session closed during creation' });
+				}
+				commitStagedDownloads(tabId);
+
+				pageUrl = page.url();
+			} else {
+				const session = await getSession(userId, contextOverrides);
+				const totalTabs = countTotalTabsForSessions([[sessionMapKey, session]]);
+				if (totalTabs >= MAX_TABS_PER_SESSION) {
+					return res.status(429).json({ error: 'Maximum tabs per session reached' });
+				}
+
+				const group = getTabGroup(session, resolvedSessionKey);
+				const page = await session.context.newPage();
+				tabId = crypto.randomUUID();
+				(page as unknown as { __camofox_tabId?: string }).__camofox_tabId = tabId;
+				const tabState = createTabState(page);
+				group.set(tabId, tabState);
+				indexTab(tabId, sessionMapKey);
+
+				registerDownloadListener(tabId, String(userId), page);
+
+				if (url) {
+					await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+					tabState.visitedUrls.add(url);
+				}
+
+				pageUrl = page.url();
 			}
 
 			log('info', 'tab created', {
@@ -395,12 +429,16 @@ router.post(
 				tabId,
 				userId,
 				sessionKey: resolvedSessionKey,
-				url: page.url(),
+				url: pageUrl,
 			});
-			return res.json({ tabId, url: page.url() });
+			return res.json({ tabId, url: pageUrl });
 		} catch (err) {
 			if (isFirstCreator && createUserId) {
-				rollbackCanonicalMutex(createUserId);
+				if (stagedGeneration) {
+					await rollbackStagedFirstUse(createUserId, stagedGeneration).catch(() => {});
+				} else {
+					rollbackCanonicalMutex(createUserId);
+				}
 			}
 			const message = err instanceof Error ? err.message : String(err);
 			log('error', 'tab create failed', { reqId: req.reqId, error: message });
