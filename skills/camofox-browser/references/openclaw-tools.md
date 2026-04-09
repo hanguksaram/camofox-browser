@@ -1,4 +1,4 @@
-# OpenClaw Plugin Tools (19)
+# OpenClaw Plugin Tools (18)
 
 This document describes the **OpenClaw Plugin Tools** registered in `plugin.ts`.
 
@@ -16,7 +16,7 @@ Source of truth for development: `AGENTS.md`
 ## Table of Contents
 
 1. Tool Architecture
-2. Tool Catalog (19)
+2. Tool Catalog (18)
 3. Tool-to-Endpoint Mapping
 4. Operational Notes
 5. Example Tool Calls
@@ -41,7 +41,7 @@ Transport:
 
 ---
 
-## 2) Tool Catalog (19)
+## 2) Tool Catalog (18)
 
 ## 1. `camofox_create_tab`
 Description: create new browser tab.
@@ -96,6 +96,7 @@ Parameters:
 
 Execute behavior:
 - Calls `POST /tabs/:tabId/type`
+- If `pressEnter` is true, then calls `POST /tabs/:tabId/press` with `key: "Enter"`
 
 ## 5. `camofox_navigate`
 Description: navigate by URL or macro.
@@ -111,6 +112,7 @@ Macro enum listed in plugin:
 - `@youtube_search`
 - `@amazon_search`
 - `@reddit_search`
+- `@reddit_subreddit`
 - `@wikipedia_search`
 - `@twitter_search`
 - `@yelp_search`
@@ -183,19 +185,7 @@ Parameters:
 Execute behavior:
 - Calls `GET /tabs?userId=...`
 
-## 13. `camofox_youtube_transcript`
-Parameters:
-- `url` (required)
-- `languages` (optional string[] default `['en']`)
-
-Execute behavior:
-- Calls `POST /youtube/transcript`
-
-Critical availability note:
-- This endpoint is not currently registered by server route files (`core.ts`, `openclaw.ts`).
-- Tool exists in plugin definition, but backend route availability is absent in current route registration.
-
-## 14. `camofox_import_cookies`
+## 13. `camofox_import_cookies`
 Description: import Netscape cookie file into session.
 
 Parameters:
@@ -240,7 +230,6 @@ Execute behavior:
 | `camofox_screenshot` | `GET /tabs/:tabId/screenshot` |
 | `camofox_close_tab` | `DELETE /tabs/:tabId` |
 | `camofox_list_tabs` | `GET /tabs` |
-| `camofox_youtube_transcript` | `POST /youtube/transcript` (route not registered) |
 | `camofox_import_cookies` | `POST /sessions/:userId/cookies` |
 | `camofox_console` | `GET /tabs/:tabId/console` |
 | `camofox_errors` | `GET /tabs/:tabId/errors` |
@@ -258,7 +247,7 @@ Execute behavior:
 - If you need strict production reliability, verify route availability against `src/routes/*.ts` before using optional plugin tools.
 
 Catalog size note:
-- OpenClaw plugin currently defines 19 tools.
+- OpenClaw plugin currently defines 18 tools.
 
 Compatibility boundaries:
 - Tool names are fixed with `camofox_` prefix and are intended for OpenClaw-compatible agent runtimes.
@@ -331,6 +320,3 @@ Import cookies:
 }
 ```
 
-YouTube transcript tool caveat:
-- `camofox_youtube_transcript` exists in plugin tool registry.
-- Current HTTP route registration does not include `/youtube/transcript`; call may fail until server route wiring is present.

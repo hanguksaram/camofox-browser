@@ -100,7 +100,7 @@ Body: `{ userId, ref?, selector?, text }`
 Body: `{ userId, key }`
 
 ### 13. `POST /tabs/:tabId/scroll`
-Body: `{ userId, direction?: "up"|"down", amount?: number }`
+Body: `{ userId, direction?: "up"|"down"|"left"|"right", amount?: number }`
 
 ### 14. `POST /tabs/:tabId/scroll-element`
 Body:
@@ -250,6 +250,9 @@ Body:
 { "userId": "agent1", "url": "https://example.com", "listItemId": "default" }
 ```
 
+Precondition: Requires an existing canonical profile for `userId` (returns `409` if absent — create one first via `POST /tabs`).
+Download listener: Attached before initial navigation, so downloads triggered on first load are captured.
+
 ### 37. `POST /start`
 Compatibility start endpoint; returns profile status payload.
 
@@ -259,10 +262,14 @@ Auth:
 - Requires admin authorization (`CAMOFOX_ADMIN_KEY` semantics)
 
 ### 39. `POST /navigate`
-Body: `{ targetId, url, userId }`
+Body: `{ targetId, url, userId }` or `{ targetId, macro, query, userId }`
+
+Supports search macros (e.g., `@google_search`) via `macro` + `query` fields, same as core `POST /tabs/:tabId/navigate`.
 
 ### 40. `GET /snapshot`
-Query: `targetId`, `userId`, optional `format`
+Query: `targetId`, `userId`, optional `format`, optional `offset`
+
+The `offset` query parameter controls character-level pagination of long snapshots. `offset=0` (default) returns the head chunk plus tail navigation links. `offset=N` returns characters N through N+budget. Non-finite or negative values are clamped to 0; values exceeding the snapshot length are clamped to the maximum valid offset. Response includes `nextOffset` when more content is available.
 
 ### 41. `POST /act`
 Combined action endpoint.
@@ -290,7 +297,7 @@ Action-specific fields:
 - Extended evaluate can return `429` (rate limit) and `408` (timeout).
 
 Important mismatch note:
-- `plugin.ts` registers a tool calling `POST /youtube/transcript`, but this route is **not registered** in `core.ts` or `openclaw.ts`.
+- The `camofox_youtube_transcript` tool has been removed from `plugin.ts`. The route `POST /youtube/transcript` remains unregistered.
 - Do not treat YouTube transcript as an available endpoint in current server routes.
 
 ---

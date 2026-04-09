@@ -1,3 +1,15 @@
+# Release Notes
+
+## Preview Governance
+
+CamoFox Browser Server is in **Preview** (Phase 1). See [Preview Status](README.md#preview-status) in README for commitments and non-goals.
+
+**Release gates** are evidence-bound: every tagged release must pass the [Release Gate Checklist](CONTRIBUTING.md#release-gate-checklist) in CONTRIBUTING.md before publication. Claims in README, RELEASE_NOTES, and CHANGELOG must reflect audited, shipped behavior — not unshipped plans.
+
+**Preview-to-GA evaluation** is evidence-based, not calendar-based. Promotion will be assessed against criteria including API surface stability, proven local-state versioning across format changes, passing test suites on supported Node.js versions, and resolution of all preview-blocking issues. These criteria may be refined as the project matures.
+
+---
+
 ### v2.0.3 — CLI Bug Fixes & Cleanup (2026-03-05)
 **npm:** Published as v2.0.4 (v2.0.3 reserved on npm registry)
 

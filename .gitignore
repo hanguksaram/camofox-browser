@@ -44,5 +44,7 @@ playwright-report/
 .verify-*
 .gitnexus
 .claude
+.commander
 CLAUDE.md
 AGENTS.md
+production

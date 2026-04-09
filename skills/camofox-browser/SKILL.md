@@ -9,7 +9,7 @@ allowed-tools: Bash(camofox:*)
 Camofox is an anti-detection browser automation system built on Camoufox + Playwright with:
 - CLI (`camofox`) for operator workflows
 - REST API (port `9377` by default) for programmatic control
-- OpenClaw plugin integration (`plugin.ts`) with 19 plugin tools
+- OpenClaw plugin integration (`plugin.ts`) with 18 plugin tools
 
 This skill is optimized for bot-evasion workflows where default browser automation gets flagged.
 
@@ -188,7 +188,7 @@ POST   /act
 Full endpoint map (all 48): `references/api-endpoints.md`.
 
 Compatibility warning:
-- `plugin.ts` includes a tool targeting `/youtube/transcript`, but current server route registration does not expose this endpoint.
+- The `camofox_youtube_transcript` tool has been removed from `plugin.ts`. Neither server route nor plugin tool expose this capability.
 
 ## 5) Common Patterns
 
@@ -430,8 +430,8 @@ screenshot --output login-result.png --user ops1
 
 - Plugin system in this repository is **OpenClaw plugin tools**, not MCP tools.
 - There is **no MCP server implementation** in this codebase.
-- OpenClaw plugin currently defines 19 tools in `plugin.ts`.
-- A plugin tool references `/youtube/transcript`, but this route is **not registered** in current server routes (`core.ts`, `openclaw.ts`). Treat it as unavailable endpoint.
+- OpenClaw plugin currently defines 18 tools in `plugin.ts`.
+- The `camofox_youtube_transcript` tool has been removed from `plugin.ts`. Neither server route nor plugin tool expose this capability.
 - CLI element refs are `eN` (for example `e1`, `e2`), not `@eN`.
 - Source of truth for development decisions: `AGENTS.md`.
 
@@ -550,7 +550,7 @@ API response handling:
 Documented guardrails for this repository revision:
 - OpenClaw plugin tool system exists and is first-class.
 - MCP server implementation does **not** exist in this codebase.
-- Plugin tool `camofox_youtube_transcript` references a route not currently registered in route files.
+- The `camofox_youtube_transcript` tool has been removed from `plugin.ts`. The route `POST /youtube/transcript` remains unregistered.
 - CLI `download` remains placeholder/stub and should be treated as non-functional direct download command.
 
 ### Appendix E — minimum safe automation contract

@@ -11,6 +11,7 @@
 
 - [Why CamoFox?](#why-camofox)
 - [Features](#features)
+- [Preview Status](#preview-status)
 - [Quick Start](#quick-start)
 - [CLI](#cli)
 - [Console Capture](#console-capture)
@@ -55,7 +56,7 @@
 - **Cookie Persistence** — import Netscape/Playwright-style cookies into a session (optional, gated by API key)
 - **OpenClaw Plugin** — OpenClaw-compatible endpoints (`/start`, `/tabs/open`, `/act`, etc.)
 - **TypeScript** — strict mode, typed request shapes, modular Express routes
-- **YouTube Transcript Extraction** — yt-dlp primary pipeline with browser fallback
+- **YouTube Transcript Extraction** — yt-dlp + browser fallback (service-level; no public API route currently exposed)
 - **Snapshot Pagination** — offset-based windowing for large page snapshots
 - **Browser Health Monitoring** — health probe with recovery/degraded state tracking
 - 🖥️ **CLI Mode** — 50+ commands for terminal-based browser automation
@@ -63,6 +64,36 @@
 - 📜 **Pipeline Scripting** — Execute command scripts from files
 - 🔍 **Console Capture** — capture and filter browser console messages and uncaught errors
 - 📼 **Playwright Tracing** — record and export Playwright traces for debugging
+
+## Preview Status
+
+CamoFox Browser Server is in **Preview** (Phase 1). Preview releases are functional for browser automation and agent integration, but carry specific compatibility commitments and explicit non-goals.
+
+### What Preview Means
+- The REST API and CLI are usable for agent workflows today; [CamoFox MCP](https://github.com/redf0x1/camofox-mcp) is available as an external companion integration
+- New features may be added between minor versions
+- Backward-compatible aliases are maintained for renamed or moved endpoints (see [Compatibility Policy](#compatibility-policy))
+- Local state (profiles, registries, sessions) uses versioned formats with fail-closed integrity checks
+
+### What Preview Does NOT Guarantee
+- **Frozen API surface** — endpoint behavior, request shapes, or response formats may change between minor versions
+- **Automatic local-state migration** — browser profiles, download registries, and session files use versioned sidecar formats; incompatible upgrades require manual reset (see [Local State Recovery](#local-state-recovery))
+- **Downgrade safety** — rolling back to an older version may require clearing local state
+- **Fixed GA timeline** — promotion to GA requires meeting evidence-based exit criteria, not a calendar date
+
+### Compatibility Policy
+During Preview, CamoFox follows an **additive-only deprecation model**:
+- **Legacy aliases** (e.g., `listItemId` accepted alongside `sessionKey`, OpenClaw `/act` routing to core endpoints) continue to work alongside their replacements
+- **Deprecated fields** are accepted silently; no removal until GA or a documented migration window with advance notice in CHANGELOG
+- **No existing endpoint** is removed in a minor version — removals happen only in major versions with prior CHANGELOG notice
+
+### Local State Recovery
+Browser profiles, download registries, and CLI session files use versioned sidecar formats. When upgrading CamoFox:
+- **Compatible versions**: State loads normally
+- **Incompatible or corrupt state**: The server refuses to load incompatible profiles and download registries; the CLI rejects incompatible saved-session files. Both log an actionable error with the specific recovery path.
+- **Recovery**: Delete the affected profile directory, session file, or download registry as indicated in the error message. Clean state is recreated on next use.
+
+There is no automatic migration, silent repair, or downgrade path. This fail-closed behavior is intentional — it prevents silent data corruption at the cost of requiring manual intervention on incompatible upgrades.
 
 ## Quick Start
 
@@ -146,7 +177,7 @@ CamoFox Browser includes a powerful CLI for browser automation directly from the
 npm install -g camofox-browser
 
 # Or use npx (no install needed)
-npx camofox open https://example.com
+npx camofox-browser open https://example.com
 ```
 
 ### Quick Start
@@ -443,7 +474,7 @@ Note: For any endpoint that targets an existing tab (`/tabs/:tabId/...`), the se
 | POST | `/tabs/:tabId/click` | Click by `ref` (e.g. `e12`) or CSS `selector` | Body: `userId` + (`ref` or `selector`) | None |
 | POST | `/tabs/:tabId/type` | Type into an element by `ref` or CSS `selector` | Body: `userId` + (`ref` or `selector`) + `text` | None |
 | POST | `/tabs/:tabId/press` | Press a key (e.g. `Enter`, `Escape`) | Body: `userId` + `key` | None |
-| POST | `/tabs/:tabId/scroll` | Scroll up/down by pixels | Body: `userId` | None |
+| POST | `/tabs/:tabId/scroll` | Scroll up/down/left/right by pixels | Body: `userId` | None |
 | POST | `/tabs/:tabId/scroll-element` | Scroll specific element into view | Body: userId, ref/selector | None |
 | POST | `/tabs/:tabId/back` | Go back | Body: `userId` | None |
 | POST | `/tabs/:tabId/forward` | Go forward | Body: `userId` | None |
