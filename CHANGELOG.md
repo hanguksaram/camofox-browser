@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.2.1] - Unreleased
+## [2.2.1] - 2026-04-09
 
 ### Changed
 - Version bump for release-prep (v2.2.0 tag exists; this patch carries final release framing)

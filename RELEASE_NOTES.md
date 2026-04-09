@@ -14,7 +14,7 @@ CamoFox Browser Server is in **Preview** (Phase 1). See [Preview Status](README.
 
 | Version | Commit | npm | GitHub Release | Notes |
 |---------|--------|-----|----------------|-------|
-| v2.2.1 | — | — | — | Patch: release-prep framing fix over v2.2.0 tag. |
+| v2.2.1 | — | — | — | Release-ready. Carries final release framing over v2.2.0 tag. |
 | v2.2.0 | `e2c397d` | — | — | Tagged 2026-04-09. Includes 11 feature commits since v2.1.1. |
 | v2.1.1 | `8b97952` | Published 2026-03-08 | Published | Patch: ref error handling |
 | v2.1.0 | `ea5af9d` | Published 2026-03-08 | Published | Patch: ref system improvements |
