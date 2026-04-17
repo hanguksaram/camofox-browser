@@ -53,6 +53,17 @@ function getLaunchOs(hostOS: CamoufoxOS): CamoufoxOS | CamoufoxOS[] {
 	return operatingSystems.length === 1 ? operatingSystems[0] : operatingSystems;
 }
 
+function buildCamoufoxScreen(): { minWidth: number; maxWidth: number; minHeight: number; maxHeight: number } | undefined {
+	const configured = CONFIG.fingerprint.screen;
+	if (!configured) return undefined;
+	return {
+		minWidth: configured.width,
+		maxWidth: configured.width,
+		minHeight: configured.height,
+		maxHeight: configured.height,
+	};
+}
+
 function buildProxyConfig(): { server: string; username?: string; password?: string } | null {
 	const { host, port, username, password } = CONFIG.proxy;
 	if (!host || !port) return null;
@@ -72,7 +83,6 @@ function getInstalledCamoufoxVersion(): string {
 }
 
 function profileDirForUserId(userId: string): string {
-	// Avoid path traversal from untrusted route params.
 	const safe = encodeURIComponent(String(userId));
 	return path.join(CONFIG.profilesDir, safe);
 }
@@ -85,7 +95,6 @@ function pickSeedOptions(opts?: BrowserContextOptions): PoolEntry['seedOptions']
 }
 
 function seedDiffers(a?: PoolEntry['seedOptions'], b?: PoolEntry['seedOptions']): boolean {
-	// Note: JSON.stringify is order-sensitive; this assumes deterministic key order for our simple, fixed-shape objects.
 	const aj = JSON.stringify(a ?? null);
 	const bj = JSON.stringify(b ?? null);
 	return aj !== bj;
@@ -214,7 +223,6 @@ export class ContextPool {
 		try {
 			entry.virtualDisplay.kill();
 		} catch {
-			// ignore cleanup errors
 		} finally {
 			entry.virtualDisplay = undefined;
 		}
@@ -224,6 +232,7 @@ export class ContextPool {
 		const hostOS = getHostOS();
 		const operatingSystems = getConfiguredOperatingSystems(hostOS);
 		const launchOs = getLaunchOs(hostOS);
+		const screen = buildCamoufoxScreen();
 		const proxy = buildProxyConfig();
 		const headless = this.headlessOverrides.get(userId) ?? CONFIG.headless;
 
@@ -282,13 +291,11 @@ export class ContextPool {
 					try {
 						xvfb.process.kill('SIGTERM');
 					} catch {
-						// ignore cleanup errors
 					}
 					setTimeout(() => {
 						try {
 							xvfb.process.kill('SIGKILL');
 						} catch {
-							// ignore cleanup errors
 						}
 					}, 3000).unref();
 				},
@@ -352,7 +359,7 @@ export class ContextPool {
 				os: launchOs,
 				allow_webgl: CONFIG.fingerprint.allowWebgl,
 				humanize: CONFIG.fingerprint.humanize,
-				...(CONFIG.fingerprint.screen ? { screen: CONFIG.fingerprint.screen } : {}),
+				...(screen ? { screen } : {}),
 				enable_cache: true,
 				proxy: proxy ?? undefined,
 				geoip: !!proxy,
@@ -374,7 +381,6 @@ export class ContextPool {
 				try {
 					virtualDisplay.kill();
 				} catch {
-					// ignore cleanup errors
 				}
 			}
 			throw err;
@@ -433,9 +439,7 @@ export class ContextPool {
 				return entry;
 			}
 
-			// If context died unexpectedly, remove and relaunch.
 			try {
-				// A cheap call that throws if the context is closed.
 				void entry.context.pages();
 			} catch {
 				this.pool.delete(normalized);
