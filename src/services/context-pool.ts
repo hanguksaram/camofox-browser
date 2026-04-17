@@ -21,6 +21,7 @@ const CONFIG = loadConfig();
 const MAX_CONTEXTS = CONFIG.maxSessions;
 
 type PersistentContextOptions = NonNullable<Parameters<typeof firefox.launchPersistentContext>[1]>;
+type CamoufoxOS = 'macos' | 'windows' | 'linux';
 
 export interface PoolEntry {
 	context: BrowserContext;
@@ -34,11 +35,22 @@ export interface PoolEntry {
 	seedOptions?: Pick<BrowserContextOptions, 'locale' | 'timezoneId' | 'geolocation' | 'viewport'>;
 }
 
-function getHostOS(): 'macos' | 'windows' | 'linux' {
+function getHostOS(): CamoufoxOS {
 	const platform = os.platform();
 	if (platform === 'darwin') return 'macos';
 	if (platform === 'win32') return 'windows';
 	return 'linux';
+}
+
+function getConfiguredOperatingSystems(hostOS: CamoufoxOS): CamoufoxOS[] {
+	const configured = CONFIG.fingerprint.os;
+	if (!configured) return [hostOS];
+	return Array.isArray(configured) ? configured : [configured];
+}
+
+function getLaunchOs(hostOS: CamoufoxOS): CamoufoxOS | CamoufoxOS[] {
+	const operatingSystems = getConfiguredOperatingSystems(hostOS);
+	return operatingSystems.length === 1 ? operatingSystems[0] : operatingSystems;
 }
 
 function buildProxyConfig(): { server: string; username?: string; password?: string } | null {
@@ -210,6 +222,8 @@ export class ContextPool {
 
 	private async launchPersistentContext(userId: string, contextOptions?: BrowserContextOptions): Promise<{ context: BrowserContext; virtualDisplay?: any }> {
 		const hostOS = getHostOS();
+		const operatingSystems = getConfiguredOperatingSystems(hostOS);
+		const launchOs = getLaunchOs(hostOS);
 		const proxy = buildProxyConfig();
 		const headless = this.headlessOverrides.get(userId) ?? CONFIG.headless;
 
@@ -292,6 +306,7 @@ export class ContextPool {
 		log('info', 'launching persistent context', {
 			userId,
 			hostOS,
+			launchOs,
 			profileDir,
 			geoip: !!proxy,
 			headless,
@@ -322,10 +337,10 @@ export class ContextPool {
 			}
 
 			if (!fingerprint) {
-				fingerprint = generateFingerprint(undefined, { operatingSystems: [hostOS] });
+				fingerprint = generateFingerprint(undefined, { operatingSystems });
 				try {
 					writeVersionedSidecar(fpPath, 1, fingerprint);
-					log('info', 'generated new fingerprint and persisted it', { userId, fpPath });
+					log('info', 'generated new fingerprint and persisted it', { userId, fpPath, operatingSystems });
 				} catch {
 					log('warn', 'generated new fingerprint but failed to persist it', { userId, fpPath });
 				}
@@ -334,8 +349,10 @@ export class ContextPool {
 			const opts = await launchOptions({
 				headless: effectiveHeadless,
 				...(virtualDisplay ? { virtual_display: virtualDisplay.get() } : {}),
-				os: hostOS,
-				humanize: true,
+				os: launchOs,
+				allow_webgl: CONFIG.fingerprint.allowWebgl,
+				humanize: CONFIG.fingerprint.humanize,
+				...(CONFIG.fingerprint.screen ? { screen: CONFIG.fingerprint.screen } : {}),
 				enable_cache: true,
 				proxy: proxy ?? undefined,
 				geoip: !!proxy,
